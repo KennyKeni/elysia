@@ -7,10 +7,18 @@ type ContentPart interface {
 type Role string
 
 const (
-	RoleSystem    Role = "system"
+	// RoleSystem    Role = "system" // Removed: System prompt is a parameter in ChatParams, not a message role
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
 	RoleTool      Role = "tool"
+)
+
+type ImageDetail string
+
+const (
+	ImageDetailLow    ImageDetail = "low"
+	ImageDetailMedium ImageDetail = "medium"
+	ImageDetailHigh   ImageDetail = "high"
 )
 
 type Message struct {
@@ -30,20 +38,24 @@ func NewContentPartText(text string) *ContentPartText { return &ContentPartText{
 
 // ContentPartImage uses Base64 data values
 type ContentPartImage struct {
-	Data string `json:"data"`
+	Data   string `json:"data"`
+	Detail string `json:"detail"`
 }
 
 func NewContentPartImage(data string) *ContentPartImage { return &ContentPartImage{Data: data} }
-
-func (*ContentPartImage) IsContentPart() {}
+func NewContentPartImageWithDetail(data string, detail ImageDetail) *ContentPartImage {
+	return &ContentPartImage{Data: data, Detail: string(detail)}
+}
 
 type ContentPartImageURL struct {
 	URL string `json:"url"`
 }
 
+func (*ContentPartImageURL) IsContentPart() {}
+
 func NewContentPartImageURL(url string) *ContentPartImageURL { return &ContentPartImageURL{URL: url} }
 
-func (*ContentPartImageURL) IsContentPart() {}
+func (*ContentPartImage) IsContentPart() {}
 
 type ContentPartRefusal struct {
 	Refusal string `json:"refusal"`
@@ -57,7 +69,6 @@ func (*ContentPartRefusal) IsContentPart() {}
 
 type ToolCall struct {
 	ID       string       `json:"id"`
-	Type     string       `json:"type"`
 	Function ToolFunction `json:"function"`
 }
 
@@ -80,13 +91,14 @@ func WithImage(data string) MessageOption {
 	}
 }
 
-func NewSystemMessage(opts ...MessageOption) *Message {
-	m := &Message{Role: RoleSystem, ContentPart: make([]ContentPart, 0)}
-	for _, opt := range opts {
-		opt(m)
-	}
-	return m
-}
+// NewSystemMessage removed: System prompt is a parameter in ChatParams, not a message role
+// func NewSystemMessage(opts ...MessageOption) *Message {
+// 	m := &Message{Role: RoleSystem, ContentPart: make([]ContentPart, 0)}
+// 	for _, opt := range opts {
+// 		opt(m)
+// 	}
+// 	return m
+// }
 
 func NewUserMessage(opts ...MessageOption) *Message {
 	m := &Message{Role: RoleUser, ContentPart: make([]ContentPart, 0)}

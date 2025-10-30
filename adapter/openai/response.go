@@ -78,9 +78,9 @@ func toMessage(msg *openai.ChatCompletionMessage) *types.Message {
 
 // toToolCall converts an OpenAI tool call to types.ToolCall
 // Returns nil if the arguments cannot be parsed as valid JSON
-func toToolCall(tc openai.ChatCompletionMessageToolCallUnion) *types.ToolCall {
+func toToolCall(toolCall openai.ChatCompletionMessageToolCallUnion) *types.ToolCall {
 	// Use AsFunction() to get the function tool call from the union
-	functionCall := tc.AsFunction()
+	functionCall := toolCall.AsFunction()
 
 	args, err := parseArguments(functionCall.Function.Arguments)
 	if err != nil {
@@ -90,8 +90,7 @@ func toToolCall(tc openai.ChatCompletionMessageToolCallUnion) *types.ToolCall {
 	}
 
 	return &types.ToolCall{
-		ID:   functionCall.ID,
-		Type: string(functionCall.Type),
+		ID: functionCall.ID,
 		Function: types.ToolFunction{
 			Name:      functionCall.Function.Name,
 			Arguments: args,
