@@ -53,5 +53,5 @@ func (c *Client) Chat(ctx context.Context, params *types.ChatParams) (*types.Cha
 	}
 
 	// Convert OpenAI response to unified response
-	return ToChatResponse(completion), nil
+	return FromChatCompletion(completion), nil
 }

@@ -85,13 +85,16 @@ func toAssistantMessage(message *types.Message) (openai.ChatCompletionMessagePar
 		}
 	}
 
-	toolCalls := make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(message.ToolCalls))
-	for _, toolCall := range message.ToolCalls {
-		tc, err := toToolCallParam(toolCall)
-		if err != nil {
-			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("error converting tool call param for assistant message: %v", err)
+	var toolCalls []openai.ChatCompletionMessageToolCallUnionParam
+	if len(message.ToolCalls) > 0 {
+		toolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(message.ToolCalls))
+		for _, toolCall := range message.ToolCalls {
+			tc, err := toToolCallParam(toolCall)
+			if err != nil {
+				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("error converting tool call param for assistant message: %v", err)
+			}
+			toolCalls = append(toolCalls, tc)
 		}
-		toolCalls = append(toolCalls, tc)
 	}
 
 	return openai.ChatCompletionMessageParamUnion{
@@ -188,4 +191,71 @@ func toToolCallParam(toolCall *types.ToolCall) (openai.ChatCompletionMessageTool
 			},
 		},
 	}, nil
+}
+
+// FromChatCompletionMessage converts an OpenAI ChatCompletionMessage to types.Message
+func FromChatCompletionMessage(msg *openai.ChatCompletionMessage) *types.Message {
+	if msg == nil {
+		return nil
+	}
+
+	message := &types.Message{
+		Role:        types.RoleAssistant,
+		ContentPart: make([]types.ContentPart, 0),
+		ToolCalls:   make([]*types.ToolCall, 0),
+	}
+
+	// Add text content if present
+	if msg.Content != "" {
+		message.ContentPart = append(message.ContentPart, types.NewContentPartText(msg.Content))
+	}
+
+	// Add refusal content if present
+	if msg.Refusal != "" {
+		message.ContentPart = append(message.ContentPart, types.NewContentPartRefusal(msg.Refusal))
+	}
+
+	// Convert tool calls if present
+	for _, toolCall := range msg.ToolCalls {
+		tc := fromToolCall(toolCall)
+		if tc != nil {
+			message.ToolCalls = append(message.ToolCalls, tc)
+		}
+		// Skip tool calls with invalid JSON arguments
+	}
+
+	return message
+}
+
+// fromToolCall converts an OpenAI tool call to types.ToolCall
+// Returns nil if the arguments cannot be parsed as valid JSON
+func fromToolCall(toolCall openai.ChatCompletionMessageToolCallUnion) *types.ToolCall {
+	// Use AsFunction() to get the function tool call from the union
+	functionCall := toolCall.AsFunction()
+
+	args, err := parseArguments(functionCall.Function.Arguments)
+	if err != nil {
+		// Return nil for tool calls with invalid JSON arguments
+		// Caller should handle this appropriately
+		return nil
+	}
+
+	return &types.ToolCall{
+		ID: functionCall.ID,
+		Function: types.ToolFunction{
+			Name:      functionCall.Function.Name,
+			Arguments: args,
+		},
+	}
+}
+
+// parseArguments converts JSON string arguments to map[string]any
+// The Tool interface expects []byte for Execute(), but ToolFunction stores map[string]any
+// for easier inspection without reparsing
+func parseArguments(args string) (map[string]any, error) {
+	var result map[string]any
+	if err := json.Unmarshal([]byte(args), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
