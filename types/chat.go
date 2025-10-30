@@ -79,6 +79,12 @@ func WithToolChoice(toolChoice ToolChoice) ChatParamOption {
 
 func WithExtras(extras map[string]any) ChatParamOption {
 	return func(p *ChatParams) {
+		if len(extras) == 0 {
+			return
+		}
+		if p.Extra == nil {
+			p.Extra = make(map[string]any, len(extras))
+		}
 		for k, v := range extras {
 			p.Extra[k] = v
 		}
