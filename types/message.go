@@ -67,6 +67,16 @@ func NewContentPartRefusal(refusal string) *ContentPartRefusal {
 
 func (*ContentPartRefusal) IsContentPart() {}
 
+type ContentPartToolResult struct {
+	Value any `json:"value"`
+}
+
+func NewContentPartToolResult(value any) *ContentPartToolResult {
+	return &ContentPartToolResult{Value: value}
+}
+
+func (*ContentPartToolResult) IsContentPart() {}
+
 type ToolCall struct {
 	ID       string       `json:"id"`
 	Function ToolFunction `json:"function"`
@@ -88,6 +98,24 @@ func WithText(text string) MessageOption {
 func WithImage(data string) MessageOption {
 	return func(m *Message) {
 		m.ContentPart = append(m.ContentPart, &ContentPartImage{Data: data})
+	}
+}
+
+func WithToolCalls(toolCalls ...*ToolCall) MessageOption {
+	return func(m *Message) {
+		m.ToolCalls = append(m.ToolCalls, toolCalls...)
+	}
+}
+
+func WithToolCallID(toolCallID string) MessageOption {
+	return func(m *Message) {
+		m.ToolCallID = &toolCallID
+	}
+}
+
+func WithToolResult(value any) MessageOption {
+	return func(m *Message) {
+		m.ContentPart = append(m.ContentPart, NewContentPartToolResult(value))
 	}
 }
 
@@ -122,4 +150,11 @@ func NewToolMessage(opts ...MessageOption) *Message {
 		opt(m)
 	}
 	return m
+}
+
+func NewToolResponse(toolCallID string, value any) *Message {
+	return NewToolMessage(
+		WithToolCallID(toolCallID),
+		WithToolResult(value),
+	)
 }

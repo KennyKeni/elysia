@@ -251,7 +251,7 @@ func TestChatWithTools(t *testing.T) {
 	}
 
 	// Create typed tool with automatic schema generation
-	weatherTool, err := types.NewTypedNativeTool(
+	weatherTool, err := types.NewNativeTool(
 		"get_weather",
 		"Get the current weather for a location",
 		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
@@ -332,7 +332,7 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	// Create typed tool with automatic schema generation
-	weatherTool, err := types.NewTypedNativeTool(
+	weatherTool, err := types.NewNativeTool(
 		"get_weather",
 		"Get the current weather for a location",
 		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
@@ -385,24 +385,21 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	t.Logf("  Arguments: %+v", toolCall.Function.Arguments)
 
 	// Execute the tool
-	argsJSON, err := json.Marshal(toolCall.Function.Arguments)
-	if err != nil {
-		t.Fatalf("Failed to marshal tool arguments: %v", err)
-	}
-
-	toolResult, err := weatherTool.Execute(ctx, argsJSON)
+	toolResult, err := weatherTool.Execute(ctx, toolCall.Function.Arguments)
 	if err != nil {
 		t.Fatalf("Tool execution failed: %v", err)
 	}
 
-	t.Logf("  Tool Result: %s", string(toolResult))
+	if resultJSON, err := json.Marshal(toolResult); err == nil {
+		t.Logf("  Tool Result: %s", string(resultJSON))
+	} else {
+		t.Logf("  Tool Result (marshal error: %v)", err)
+	}
 
 	// Step 3: Send tool result back to LLM
 	messages = append(messages, choice.Message)
 
-	toolCallID := toolCall.ID
-	toolResultMessage := types.NewToolMessage(types.WithText(string(toolResult)))
-	toolResultMessage.ToolCallID = &toolCallID
+	toolResultMessage := types.NewToolResponse(toolCall.ID, toolResult)
 	messages = append(messages, toolResultMessage)
 
 	params = &types.ChatParams{

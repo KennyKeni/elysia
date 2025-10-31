@@ -21,23 +21,23 @@ func ToChatCompletionMessage(systemPrompt string, messages []*types.Message) ([]
 		case types.RoleUser:
 			userMessage, err := toUserMessage(message)
 			if err != nil {
-				return nil, fmt.Errorf("error converting message to UserMessage: %v", err)
+				return nil, fmt.Errorf("error converting message to UserMessage: %w", err)
 			}
 			result = append(result, userMessage)
 		case types.RoleAssistant:
 			assistantMessage, err := toAssistantMessage(message)
 			if err != nil {
-				return nil, fmt.Errorf("error converting message to AssistantMessage: %v", err)
+				return nil, fmt.Errorf("error converting message to AssistantMessage: %w", err)
 			}
 			result = append(result, assistantMessage)
 		case types.RoleTool:
 			toolResultMessage, err := toToolResultMessage(message)
 			if err != nil {
-				return nil, fmt.Errorf("error converting message to ToolResultMessage: %v", err)
+				return nil, fmt.Errorf("error converting message to ToolResultMessage: %w", err)
 			}
 			result = append(result, toolResultMessage)
 		default:
-			return nil, fmt.Errorf("unsupported message role: %s", message.Role)
+			return nil, fmt.Errorf("%w: %s", ErrUnsupportedMessageRole, message.Role)
 		}
 	}
 
@@ -57,7 +57,7 @@ func toUserMessage(message *types.Message) (openai.ChatCompletionMessageParamUni
 		case *types.ContentPartImageURL:
 			content = append(content, toUserImageURLPart(part))
 		default:
-			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported content part for user message: %T", part)
+			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("%w: %T", ErrUnsupportedUserContentPart, part)
 		}
 	}
 
@@ -81,7 +81,7 @@ func toAssistantMessage(message *types.Message) (openai.ChatCompletionMessagePar
 		case *types.ContentPartRefusal:
 			content = append(content, toAssistantRefusalPart(part))
 		default:
-			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported content part for assistant message: %T", part)
+			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("%w: %T", ErrUnsupportedAssistantContentPart, part)
 		}
 	}
 
@@ -91,7 +91,7 @@ func toAssistantMessage(message *types.Message) (openai.ChatCompletionMessagePar
 		for _, toolCall := range message.ToolCalls {
 			tc, err := toToolCallParam(toolCall)
 			if err != nil {
-				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("error converting tool call param for assistant message: %v", err)
+				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("error converting tool call param for assistant message: %w", err)
 			}
 			toolCalls = append(toolCalls, tc)
 		}
@@ -117,13 +117,21 @@ func toToolResultMessage(message *types.Message) (openai.ChatCompletionMessagePa
 			content = append(content, openai.ChatCompletionContentPartTextParam{
 				Text: part.Text,
 			})
+		case *types.ContentPartToolResult:
+			text, err := marshalToolResult(part.Value)
+			if err != nil {
+				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("failed to marshal tool result: %w", err)
+			}
+			content = append(content, openai.ChatCompletionContentPartTextParam{
+				Text: text,
+			})
 		default:
-			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported content part for tool message: %T", part)
+			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("%w: %T", ErrUnsupportedToolContentPart, part)
 		}
 	}
 
 	if message.ToolCallID == nil {
-		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("tool message missing ToolCallID")
+		return openai.ChatCompletionMessageParamUnion{}, ErrMissingToolCallID
 	}
 
 	return openai.ChatCompletionMessageParamUnion{
@@ -134,6 +142,23 @@ func toToolResultMessage(message *types.Message) (openai.ChatCompletionMessagePa
 			ToolCallID: *message.ToolCallID,
 		},
 	}, nil
+}
+
+func marshalToolResult(value any) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "null", nil
+	case string:
+		return v, nil
+	case []byte:
+		return string(v), nil
+	default:
+		marshaled, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		return string(marshaled), nil
+	}
 }
 
 // toUserTextPart converts text content to OpenAI user message text part

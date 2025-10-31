@@ -52,6 +52,10 @@ func (c *Client) Chat(ctx context.Context, params *types.ChatParams) (*types.Cha
 		return nil, err
 	}
 
+	if err := validateChatCompletion(completion); err != nil {
+		return nil, err
+	}
+
 	// Convert OpenAI response to unified response
 	return FromChatCompletion(completion), nil
 }
