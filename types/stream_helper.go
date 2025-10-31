@@ -2,13 +2,15 @@ package types
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sort"
 )
 
 // StreamWithHandler streams a chat response using the provided client, invokes
 // onChunk for every chunk, and returns a fully assembled ChatResponse when the
-// stream finishes. The helper assumes a single choice (n == 1). Clients that
-// request multiple choices should extend the accumulator logic accordingly.
+// stream finishes. All choices are accumulated independently so requests with
+// n > 1 are supported.
 func StreamWithHandler(
 	ctx context.Context,
 	client Client,
@@ -26,12 +28,10 @@ func StreamWithHandler(
 		}
 	}(stream)
 
-	acc := NewMessageAccumulator()
-
-	var (
-		finalUsage       *Usage
-		lastFinishReason string
-	)
+	accumulators := make(map[int]*MessageAccumulator)
+	finishReasons := make(map[int]string)
+	order := make([]int, 0)
+	var finalUsage *Usage
 
 	for stream.Next() {
 		chunk := stream.Chunk()
@@ -43,17 +43,26 @@ func StreamWithHandler(
 			onChunk(chunk)
 		}
 
-		if len(chunk.Choices) == 0 {
-			continue
-		}
+		for _, choice := range chunk.Choices {
+			idx := choice.Index
 
-		choice := chunk.Choices[0]
-		if choice.Delta != nil {
-			acc.Update(choice.Delta)
-		}
+			acc := accumulators[idx]
+			if acc == nil {
+				acc = NewMessageAccumulator()
+				accumulators[idx] = acc
+				order = append(order, idx)
+			}
 
-		if choice.FinishReason != "" {
-			lastFinishReason = choice.FinishReason
+			if choice.Delta != nil {
+				acc.Update(choice.Delta)
+				if err := acc.Error(); err != nil {
+					return nil, fmt.Errorf("stream accumulator (choice %d): %w", idx, err)
+				}
+			}
+
+			if choice.FinishReason != "" {
+				finishReasons[idx] = choice.FinishReason
+			}
 		}
 
 		if chunk.Usage != nil {
@@ -65,20 +74,31 @@ func StreamWithHandler(
 		return nil, err
 	}
 
-	message, err := acc.Message()
-	if err != nil {
-		return nil, err
+	// Reconstruct choices in a stable order.
+	sort.Ints(order)
+
+	choices := make([]*Choice, 0, len(order))
+	for _, idx := range order {
+		acc := accumulators[idx]
+		if acc == nil {
+			continue
+		}
+
+		message, err := acc.Message()
+		if err != nil {
+			return nil, fmt.Errorf("stream accumulator (choice %d): %w", idx, err)
+		}
+
+		choices = append(choices, &Choice{
+			Index:        idx,
+			Message:      message,
+			FinishReason: finishReasons[idx],
+		})
 	}
 
 	return &ChatResponse{
-		Model: params.Model,
-		Choices: []*Choice{
-			{
-				Index:        0,
-				Message:      message,
-				FinishReason: lastFinishReason,
-			},
-		},
-		Usage: finalUsage,
+		Model:   params.Model,
+		Choices: choices,
+		Usage:   finalUsage,
 	}, nil
 }

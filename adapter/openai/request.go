@@ -50,5 +50,11 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 		}
 	}
 
+	if chatParams.StreamOptions != nil && chatParams.StreamOptions.IncludeUsage {
+		request.StreamOptions = openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		}
+	}
+
 	return request, nil
 }

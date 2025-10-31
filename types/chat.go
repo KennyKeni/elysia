@@ -6,9 +6,10 @@ import "encoding/json"
 // Supports OpenAI, Anthropic, and Google GenAI providers.
 type ChatParams struct {
 	// Core parameters
-	Model        string     `json:"model"`
-	Messages     []*Message `json:"messages"`
-	SystemPrompt string     `json:"system_prompt,omitempty"`
+	Model         string         `json:"model"`
+	Messages      []*Message     `json:"messages"`
+	SystemPrompt  string         `json:"system_prompt,omitempty"`
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
 
 	// Sampling parameters
 	MaxTokens   *int     `json:"max_tokens,omitempty"`
@@ -89,6 +90,23 @@ func WithExtras(extras map[string]any) ChatParamOption {
 			p.Extra[k] = v
 		}
 	}
+}
+
+// StreamOptions controls provider streaming behaviour.
+type StreamOptions struct {
+	IncludeUsage bool
+}
+
+// WithStreamOptions configures streaming options on the params.
+func WithStreamOptions(options StreamOptions) ChatParamOption {
+	return func(p *ChatParams) {
+		p.StreamOptions = &options
+	}
+}
+
+// WithStreamIncludeUsage enables usage deltas in streaming responses where supported.
+func WithStreamIncludeUsage() ChatParamOption {
+	return WithStreamOptions(StreamOptions{IncludeUsage: true})
 }
 
 // ChatResponse represents the response from a chat completion request.
