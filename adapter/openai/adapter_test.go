@@ -85,6 +85,78 @@ func TestChatIntegration(t *testing.T) {
 	}
 }
 
+func TestChatStreamIntegration(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping streaming integration test: OPENAI_API_KEY not set")
+	}
+
+	client := NewClient(WithAPIKey(apiKey))
+	params := &types.ChatParams{
+		Model: "gpt-4o-mini",
+		Messages: []*types.Message{
+			types.NewUserMessage(types.WithText("Respond with a short greeting.")),
+		},
+	}
+
+	ctx := context.Background()
+	stream, err := client.ChatStream(ctx, params)
+	if err != nil {
+		t.Fatalf("ChatStream request failed: %v", err)
+	}
+	defer func() {
+		if cerr := stream.Close(); cerr != nil {
+			t.Fatalf("Close returned error: %v", cerr)
+		}
+	}()
+
+	acc := types.NewMessageAccumulator()
+	chunkCount := 0
+
+	for stream.Next() {
+		chunkCount++
+		chunk := stream.Chunk()
+		if chunk == nil {
+			continue
+		}
+
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		delta := chunk.Choices[0].Delta
+		if delta != nil {
+			acc.Update(delta)
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream encountered error: %v", err)
+	}
+
+	if chunkCount == 0 {
+		t.Fatal("expected at least one chunk from streaming response")
+	}
+
+	message, err := acc.Message()
+	if err != nil {
+		t.Fatalf("failed to build message from stream: %v", err)
+	}
+
+	if len(message.ContentPart) == 0 {
+		t.Fatal("expected accumulated message to contain content")
+	}
+
+	text, ok := message.ContentPart[0].(*types.ContentPartText)
+	if !ok {
+		t.Fatalf("expected first content part to be text, got %T", message.ContentPart[0])
+	}
+
+	if text.Text == "" {
+		t.Fatal("expected greeting text to be non-empty")
+	}
+}
+
 // TestChatWithSystemPrompt tests chat with system prompt
 func TestChatWithSystemPrompt(t *testing.T) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
@@ -439,4 +511,305 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	t.Log("✓ Complete tool calling round-trip successful!")
+}
+
+// TestChatStreamWithTools tests tool calling via streaming API
+func TestChatStreamWithTools(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping streaming tool test: OPENAI_API_KEY not set")
+	}
+
+	client := NewClient(WithAPIKey(apiKey))
+
+	type WeatherInput struct {
+		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
+		Unit     string `json:"unit,omitempty" jsonschema:"The temperature unit to use (celsius or fahrenheit)"`
+	}
+
+	type WeatherOutput struct {
+		Temperature float64 `json:"temperature" jsonschema:"The temperature in the specified unit"`
+		Condition   string  `json:"condition" jsonschema:"The weather condition (e.g. sunny, cloudy, rainy)"`
+	}
+
+	weatherTool, err := types.NewNativeTool(
+		"get_weather",
+		"Get the current weather for a location",
+		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
+			return WeatherOutput{
+				Temperature: 72,
+				Condition:   "sunny",
+			}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create weather tool: %v", err)
+	}
+
+	params := &types.ChatParams{
+		Model: "gpt-4o-mini",
+		Messages: []*types.Message{
+			types.NewUserMessage(types.WithText("What's the weather in San Francisco?")),
+		},
+		Tools: []types.Tool{weatherTool},
+	}
+
+	ctx := context.Background()
+	stream, err := client.ChatStream(ctx, params)
+	if err != nil {
+		t.Fatalf("ChatStream failed: %v", err)
+	}
+	defer func() {
+		if cerr := stream.Close(); cerr != nil {
+			t.Errorf("Stream close error: %v", cerr)
+		}
+	}()
+
+	acc := types.NewMessageAccumulator()
+	chunkCount := 0
+	var finishReason string
+
+	t.Log("Consuming stream chunks...")
+	for stream.Next() {
+		chunkCount++
+		chunk := stream.Chunk()
+
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+
+			if choice.Delta != nil {
+				acc.Update(choice.Delta)
+
+				if choice.Delta.Content != "" {
+					t.Logf("  [chunk %d] Content: %q", chunkCount, choice.Delta.Content)
+				}
+
+				for _, tcDelta := range choice.Delta.ToolCalls {
+					if tcDelta.ID != "" {
+						t.Logf("  [chunk %d] Tool call started: ID=%s, Name=%s", chunkCount, tcDelta.ID, tcDelta.FunctionName)
+					}
+					if tcDelta.Arguments != "" {
+						t.Logf("  [chunk %d] Tool arguments fragment: %q", chunkCount, tcDelta.Arguments)
+					}
+				}
+			}
+
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+				t.Logf("  [chunk %d] Finish reason: %s", chunkCount, finishReason)
+			}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	t.Logf("Stream complete - received %d chunks", chunkCount)
+
+	message, err := acc.Message()
+	if err != nil {
+		t.Fatalf("Failed to build message from stream: %v", err)
+	}
+
+	t.Logf("Accumulated message role: %s", message.Role)
+
+	if finishReason != "tool_calls" {
+		t.Logf("Note: finish_reason=%q (model may have responded directly instead of calling tool)", finishReason)
+		if len(message.ContentPart) > 0 {
+			if text, ok := message.ContentPart[0].(*types.ContentPartText); ok {
+				t.Logf("Direct response: %s", text.Text)
+			}
+		}
+		return
+	}
+
+	if len(message.ToolCalls) == 0 {
+		t.Fatal("finish_reason was 'tool_calls' but no tool calls accumulated")
+	}
+
+	t.Logf("Tool calls accumulated: %d", len(message.ToolCalls))
+	for i, toolCall := range message.ToolCalls {
+		t.Logf("  Tool call %d:", i)
+		t.Logf("    ID: %s", toolCall.ID)
+		t.Logf("    Function: %s", toolCall.Function.Name)
+		t.Logf("    Arguments: %+v", toolCall.Function.Arguments)
+
+		if toolCall.Function.Name != "get_weather" {
+			t.Errorf("Expected function name 'get_weather', got %q", toolCall.Function.Name)
+		}
+
+		if len(toolCall.Function.Arguments) == 0 {
+			t.Error("Tool call arguments are empty")
+		}
+	}
+
+	t.Log("✓ Streaming tool call test successful!")
+}
+
+// TestChatStreamWithToolsRoundTrip tests complete streaming tool workflow:
+// 1. Stream initial response (model calls tool)
+// 2. Execute tool
+// 3. Stream final response with tool result
+func TestChatStreamWithToolsRoundTrip(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping streaming tool round-trip test: OPENAI_API_KEY not set")
+	}
+
+	client := NewClient(WithAPIKey(apiKey))
+
+	type WeatherInput struct {
+		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
+	}
+
+	type WeatherOutput struct {
+		Temperature float64 `json:"temperature" jsonschema:"The temperature"`
+		Condition   string  `json:"condition" jsonschema:"The weather condition"`
+	}
+
+	weatherTool, err := types.NewNativeTool(
+		"get_weather",
+		"Get the current weather for a location",
+		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
+			return WeatherOutput{
+				Temperature: 72,
+				Condition:   "sunny",
+			}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create weather tool: %v", err)
+	}
+
+	messages := []*types.Message{
+		types.NewUserMessage(types.WithText("What's the weather in San Francisco? Be specific.")),
+	}
+
+	params := &types.ChatParams{
+		Model:    "gpt-4o-mini",
+		Messages: messages,
+		Tools:    []types.Tool{weatherTool},
+	}
+
+	ctx := context.Background()
+
+	t.Log("Step 1: Streaming initial request to LLM")
+	stream, err := client.ChatStream(ctx, params)
+	if err != nil {
+		t.Fatalf("ChatStream failed: %v", err)
+	}
+
+	acc := types.NewMessageAccumulator()
+	var finishReason string
+
+	for stream.Next() {
+		chunk := stream.Chunk()
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+			if choice.Delta != nil {
+				acc.Update(choice.Delta)
+			}
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
+		}
+	}
+
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Stream close failed: %v", err)
+	}
+
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	message, err := acc.Message()
+	if err != nil {
+		t.Fatalf("Failed to build message: %v", err)
+	}
+
+	t.Logf("Finish reason: %s", finishReason)
+
+	if len(message.ToolCalls) == 0 {
+		t.Fatal("Expected LLM to call tool, but no tool calls received")
+	}
+
+	t.Logf("Step 2: LLM called %d tool(s) via streaming", len(message.ToolCalls))
+
+	toolCall := message.ToolCalls[0]
+	t.Logf("  Tool: %s", toolCall.Function.Name)
+	t.Logf("  Arguments: %+v", toolCall.Function.Arguments)
+
+	toolResult, err := weatherTool.Execute(ctx, toolCall.Function.Arguments)
+	if err != nil {
+		t.Fatalf("Tool execution failed: %v", err)
+	}
+
+	if resultJSON, err := json.Marshal(toolResult); err == nil {
+		t.Logf("  Tool result: %s", string(resultJSON))
+	}
+
+	messages = append(messages, message)
+	messages = append(messages, types.NewToolResponse(toolCall.ID, toolResult))
+
+	params = &types.ChatParams{
+		Model:    "gpt-4o-mini",
+		Messages: messages,
+		Tools:    []types.Tool{weatherTool},
+	}
+
+	t.Log("Step 3: Streaming final response with tool result")
+	stream, err = client.ChatStream(ctx, params)
+	if err != nil {
+		t.Fatalf("Final ChatStream failed: %v", err)
+	}
+	defer func() {
+		if cerr := stream.Close(); cerr != nil {
+			t.Errorf("Stream close error: %v", cerr)
+		}
+	}()
+
+	finalAcc := types.NewMessageAccumulator()
+	var finalText string
+
+	for stream.Next() {
+		chunk := stream.Chunk()
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+			if choice.Delta != nil {
+				finalAcc.Update(choice.Delta)
+				if choice.Delta.Content != "" {
+					finalText += choice.Delta.Content
+					t.Logf("  Stream: %q", choice.Delta.Content)
+				}
+			}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Final stream error: %v", err)
+	}
+
+	finalMessage, err := finalAcc.Message()
+	if err != nil {
+		t.Fatalf("Failed to build final message: %v", err)
+	}
+
+	if len(finalMessage.ContentPart) == 0 {
+		t.Fatal("Expected final message to have content")
+	}
+
+	textPart, ok := finalMessage.ContentPart[0].(*types.ContentPartText)
+	if !ok {
+		t.Fatalf("Expected text content, got %T", finalMessage.ContentPart[0])
+	}
+
+	t.Logf("Step 4: Final answer: %s", textPart.Text)
+
+	if textPart.Text == "" {
+		t.Error("Final response text is empty")
+	}
+
+	t.Log("✓ Complete streaming tool round-trip successful!")
 }

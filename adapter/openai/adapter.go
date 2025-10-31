@@ -59,3 +59,14 @@ func (c *Client) Chat(ctx context.Context, params *types.ChatParams) (*types.Cha
 	// Convert OpenAI response to unified response
 	return FromChatCompletion(completion), nil
 }
+
+// ChatStream performs a streaming chat completion request and returns an iterator over chunks.
+func (c *Client) ChatStream(ctx context.Context, params *types.ChatParams) (*types.Stream, error) {
+	openaiParams, err := ToChatCompletionParams(params)
+	if err != nil {
+		return nil, err
+	}
+
+	stream := c.client.Chat.Completions.NewStreaming(ctx, openaiParams)
+	return newChatStream(stream), nil
+}
