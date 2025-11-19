@@ -1,14 +1,18 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/KennyKeni/elysia/types"
 	"github.com/openai/openai-go/v3"
 )
 
 func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletionNewParams, error) {
+	if chatParams == nil {
+		return openai.ChatCompletionNewParams{}, errors.New("nil chatParams")
+	}
+
 	request := openai.ChatCompletionNewParams{
 		Model: chatParams.Model,
 		Stop:  openai.ChatCompletionNewParamsStopUnion{OfStringArray: chatParams.Stop},
@@ -26,9 +30,10 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 		request.TopP = openai.Float(*chatParams.TopP)
 	}
 
-	if chatParams.TopK != nil {
-		slog.Warn("OpenAI does not support top K parameter")
-	}
+	// topK is ignored
+	//if chatParams.TopK != nil {
+	//	slog.Warn("OpenAI does not support top K parameter")
+	//}
 
 	messages, err := ToChatCompletionMessage(chatParams.SystemPrompt, chatParams.Messages)
 	if err != nil {

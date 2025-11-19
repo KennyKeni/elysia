@@ -9,7 +9,7 @@ import (
 )
 
 // ToChatCompletionMessage converts unified messages to OpenAI chat completion message parameters
-func ToChatCompletionMessage(systemPrompt string, messages []*types.Message) ([]openai.ChatCompletionMessageParamUnion, error) {
+func ToChatCompletionMessage(systemPrompt string, messages []types.Message) ([]openai.ChatCompletionMessageParamUnion, error) {
 	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1)
 
 	if systemPrompt != "" {
@@ -19,19 +19,19 @@ func ToChatCompletionMessage(systemPrompt string, messages []*types.Message) ([]
 	for _, message := range messages {
 		switch message.Role {
 		case types.RoleUser:
-			userMessage, err := toUserMessage(message)
+			userMessage, err := toUserMessage(&message)
 			if err != nil {
 				return nil, fmt.Errorf("error converting message to UserMessage: %w", err)
 			}
 			result = append(result, userMessage)
 		case types.RoleAssistant:
-			assistantMessage, err := toAssistantMessage(message)
+			assistantMessage, err := toAssistantMessage(&message)
 			if err != nil {
 				return nil, fmt.Errorf("error converting message to AssistantMessage: %w", err)
 			}
 			result = append(result, assistantMessage)
 		case types.RoleTool:
-			toolResultMessage, err := toToolResultMessage(message)
+			toolResultMessage, err := toToolResultMessage(&message)
 			if err != nil {
 				return nil, fmt.Errorf("error converting message to ToolResultMessage: %w", err)
 			}
@@ -88,8 +88,8 @@ func toAssistantMessage(message *types.Message) (openai.ChatCompletionMessagePar
 	var toolCalls []openai.ChatCompletionMessageToolCallUnionParam
 	if len(message.ToolCalls) > 0 {
 		toolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(message.ToolCalls))
-		for _, toolCall := range message.ToolCalls {
-			tc, err := toToolCallParam(toolCall)
+		for i := range message.ToolCalls {
+			tc, err := toToolCallParam(&message.ToolCalls[i])
 			if err != nil {
 				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("error converting tool call param for assistant message: %w", err)
 			}
@@ -117,14 +117,6 @@ func toToolResultMessage(message *types.Message) (openai.ChatCompletionMessagePa
 			content = append(content, openai.ChatCompletionContentPartTextParam{
 				Text: part.Text,
 			})
-		case *types.ContentPartToolResult:
-			text, err := marshalToolResult(part.Value)
-			if err != nil {
-				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("failed to marshal tool result: %w", err)
-			}
-			content = append(content, openai.ChatCompletionContentPartTextParam{
-				Text: text,
-			})
 		default:
 			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("%w: %T", ErrUnsupportedToolContentPart, part)
 		}
@@ -142,23 +134,6 @@ func toToolResultMessage(message *types.Message) (openai.ChatCompletionMessagePa
 			ToolCallID: *message.ToolCallID,
 		},
 	}, nil
-}
-
-func marshalToolResult(value any) (string, error) {
-	switch v := value.(type) {
-	case nil:
-		return "null", nil
-	case string:
-		return v, nil
-	case []byte:
-		return string(v), nil
-	default:
-		marshaled, err := json.Marshal(v)
-		if err != nil {
-			return "", err
-		}
-		return string(marshaled), nil
-	}
 }
 
 // toUserTextPart converts text content to OpenAI user message text part
@@ -227,7 +202,7 @@ func FromChatCompletionMessage(msg *openai.ChatCompletionMessage) *types.Message
 	message := &types.Message{
 		Role:        types.RoleAssistant,
 		ContentPart: make([]types.ContentPart, 0),
-		ToolCalls:   make([]*types.ToolCall, 0),
+		ToolCalls:   make([]types.ToolCall, 0),
 	}
 
 	// Add text content if present
@@ -244,7 +219,7 @@ func FromChatCompletionMessage(msg *openai.ChatCompletionMessage) *types.Message
 	for _, toolCall := range msg.ToolCalls {
 		tc := fromToolCall(toolCall)
 		if tc != nil {
-			message.ToolCalls = append(message.ToolCalls, tc)
+			message.ToolCalls = append(message.ToolCalls, *tc)
 		}
 		// Skip tool calls with invalid JSON arguments
 	}

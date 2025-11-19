@@ -7,7 +7,6 @@ type ContentPart interface {
 type Role string
 
 const (
-	// RoleSystem    Role = "system" // Removed: System prompt is a parameter in ChatParams, not a message role
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
 	RoleTool      Role = "tool"
@@ -24,7 +23,7 @@ const (
 type Message struct {
 	Role        Role          `json:"role"`
 	ContentPart []ContentPart `json:"content_part"`
-	ToolCalls   []*ToolCall   `json:"tool_calls,omitempty"`
+	ToolCalls   []ToolCall    `json:"tool_calls,omitempty"`
 	ToolCallID  *string       `json:"tool_call_id,omitempty"` // For RoleTool messages - references which call this respond to
 }
 
@@ -67,16 +66,6 @@ func NewContentPartRefusal(refusal string) *ContentPartRefusal {
 
 func (*ContentPartRefusal) IsContentPart() {}
 
-type ContentPartToolResult struct {
-	Value any `json:"value"`
-}
-
-func NewContentPartToolResult(value any) *ContentPartToolResult {
-	return &ContentPartToolResult{Value: value}
-}
-
-func (*ContentPartToolResult) IsContentPart() {}
-
 type ToolCall struct {
 	ID       string       `json:"id"`
 	Function ToolFunction `json:"function"`
@@ -101,7 +90,7 @@ func WithImage(data string) MessageOption {
 	}
 }
 
-func WithToolCalls(toolCalls ...*ToolCall) MessageOption {
+func WithToolCalls(toolCalls ...ToolCall) MessageOption {
 	return func(m *Message) {
 		m.ToolCalls = append(m.ToolCalls, toolCalls...)
 	}
@@ -113,48 +102,26 @@ func WithToolCallID(toolCallID string) MessageOption {
 	}
 }
 
-func WithToolResult(value any) MessageOption {
-	return func(m *Message) {
-		m.ContentPart = append(m.ContentPart, NewContentPartToolResult(value))
-	}
-}
-
-// NewSystemMessage removed: System prompt is a parameter in ChatParams, not a message role
-// func NewSystemMessage(opts ...MessageOption) *Message {
-// 	m := &Message{Role: RoleSystem, ContentPart: make([]ContentPart, 0)}
-// 	for _, opt := range opts {
-// 		opt(m)
-// 	}
-// 	return m
-// }
-
-func NewUserMessage(opts ...MessageOption) *Message {
-	m := &Message{Role: RoleUser, ContentPart: make([]ContentPart, 0)}
+func NewUserMessage(opts ...MessageOption) Message {
+	m := Message{Role: RoleUser, ContentPart: make([]ContentPart, 0)}
 	for _, opt := range opts {
-		opt(m)
+		opt(&m)
 	}
 	return m
 }
 
-func NewAssistantMessage(opts ...MessageOption) *Message {
-	m := &Message{Role: RoleAssistant, ContentPart: make([]ContentPart, 0)}
+func NewAssistantMessage(opts ...MessageOption) Message {
+	m := Message{Role: RoleAssistant, ContentPart: make([]ContentPart, 0)}
 	for _, opt := range opts {
-		opt(m)
+		opt(&m)
 	}
 	return m
 }
 
-func NewToolMessage(opts ...MessageOption) *Message {
-	m := &Message{Role: RoleTool, ContentPart: make([]ContentPart, 0)}
+func NewToolMessage(opts ...MessageOption) Message {
+	m := Message{Role: RoleTool, ContentPart: make([]ContentPart, 0)}
 	for _, opt := range opts {
-		opt(m)
+		opt(&m)
 	}
 	return m
-}
-
-func NewToolResponse(toolCallID string, value any) *Message {
-	return NewToolMessage(
-		WithToolCallID(toolCallID),
-		WithToolResult(value),
-	)
 }

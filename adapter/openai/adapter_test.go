@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/KennyKeni/elysia/client"
 	"github.com/KennyKeni/elysia/types"
 )
 
@@ -19,19 +20,19 @@ func TestChatIntegration(t *testing.T) {
 	}
 
 	// Create client with API key
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	// Create a simple chat request
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("Say 'Hello, World!' and nothing else.")),
 		},
 	}
 
 	// Make the request
 	ctx := context.Background()
-	response, err := client.Chat(ctx, params)
+	response, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Chat request failed: %v", err)
 	}
@@ -91,16 +92,16 @@ func TestChatStreamIntegration(t *testing.T) {
 		t.Skip("Skipping streaming integration test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("Respond with a short greeting.")),
 		},
 	}
 
 	ctx := context.Background()
-	stream, err := client.ChatStream(ctx, params)
+	stream, err := c.ChatStream(ctx, params)
 	if err != nil {
 		t.Fatalf("ChatStream request failed: %v", err)
 	}
@@ -164,18 +165,18 @@ func TestChatWithSystemPrompt(t *testing.T) {
 		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	params := &types.ChatParams{
 		Model:        "gpt-4o-mini",
 		SystemPrompt: "You are a helpful assistant that always responds in pirate speak.",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("Tell me about the weather.")),
 		},
 	}
 
 	ctx := context.Background()
-	response, err := client.Chat(ctx, params)
+	response, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Chat request failed: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestChatWithParameters(t *testing.T) {
 		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	maxTokens := 50
 	temperature := 0.7
@@ -207,7 +208,7 @@ func TestChatWithParameters(t *testing.T) {
 
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("Write a very short poem about coding.")),
 		},
 		MaxTokens:   &maxTokens,
@@ -216,7 +217,7 @@ func TestChatWithParameters(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	response, err := client.Chat(ctx, params)
+	response, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Chat request failed: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestChatWithParameters(t *testing.T) {
 	t.Logf("Poem: %s", textPart.Text)
 
 	// Verify token limit was respected (approximately)
-	if response.Usage != nil && response.Usage.CompletionTokens > maxTokens+10 {
+	if response.Usage != nil && response.Usage.CompletionTokens > int64(maxTokens+10) {
 		t.Errorf("Completion tokens (%d) exceeded max tokens (%d) by too much",
 			response.Usage.CompletionTokens, maxTokens)
 	}
@@ -246,11 +247,11 @@ func TestChatMultiTurn(t *testing.T) {
 		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("My name is Alice.")),
 			types.NewAssistantMessage(types.WithText("Hello Alice! Nice to meet you.")),
 			types.NewUserMessage(types.WithText("What's my name?")),
@@ -258,7 +259,7 @@ func TestChatMultiTurn(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	response, err := client.Chat(ctx, params)
+	response, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Chat request failed: %v", err)
 	}
@@ -283,17 +284,17 @@ func TestChatMultiTurn(t *testing.T) {
 
 // TestChatWithInvalidAPIKey tests error handling with invalid API key
 func TestChatWithInvalidAPIKey(t *testing.T) {
-	client := NewClient(WithAPIKey("invalid-api-key"))
+	c := NewClient(client.WithAPIKey("invalid-api-key"))
 
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("Hello")),
 		},
 	}
 
 	ctx := context.Background()
-	_, err := client.Chat(ctx, params)
+	_, err := c.Chat(ctx, params)
 
 	if err == nil {
 		t.Fatal("Expected error with invalid API key, got nil")
@@ -309,7 +310,7 @@ func TestChatWithTools(t *testing.T) {
 		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	// Define input/output types for the weather tool
 	type WeatherInput struct {
@@ -340,14 +341,14 @@ func TestChatWithTools(t *testing.T) {
 
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("What's the weather like in San Francisco?")),
 		},
 		Tools: []types.Tool{weatherTool},
 	}
 
 	ctx := context.Background()
-	response, err := client.Chat(ctx, params)
+	response, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Chat request failed: %v", err)
 	}
@@ -390,7 +391,7 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	// Define input/output types for the weather tool
 	type WeatherInput struct {
@@ -420,7 +421,7 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	// Step 1: Initial request with user question
-	messages := []*types.Message{
+	messages := []types.Message{
 		types.NewUserMessage(types.WithText("What's the weather like in San Francisco?")),
 	}
 
@@ -432,7 +433,7 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 
 	ctx := context.Background()
 	t.Log("Step 1: Sending initial request to LLM")
-	response, err := client.Chat(ctx, params)
+	response, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Initial chat request failed: %v", err)
 	}
@@ -469,9 +470,9 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	// Step 3: Send tool result back to LLM
-	messages = append(messages, choice.Message)
+	messages = append(messages, *choice.Message)
 
-	toolResultMessage := types.NewToolResponse(toolCall.ID, toolResult)
+	toolResultMessage := types.NewToolResultMessage(toolCall.ID, toolResult)
 	messages = append(messages, toolResultMessage)
 
 	params = &types.ChatParams{
@@ -481,7 +482,7 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	t.Log("Step 3: Sending tool result back to LLM for final answer")
-	finalResponse, err := client.Chat(ctx, params)
+	finalResponse, err := c.Chat(ctx, params)
 	if err != nil {
 		t.Fatalf("Final chat request failed: %v", err)
 	}
@@ -520,7 +521,7 @@ func TestChatStreamWithTools(t *testing.T) {
 		t.Skip("Skipping streaming tool test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	type WeatherInput struct {
 		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
@@ -548,14 +549,14 @@ func TestChatStreamWithTools(t *testing.T) {
 
 	params := &types.ChatParams{
 		Model: "gpt-4o-mini",
-		Messages: []*types.Message{
+		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("What's the weather in San Francisco?")),
 		},
 		Tools: []types.Tool{weatherTool},
 	}
 
 	ctx := context.Background()
-	stream, err := client.ChatStream(ctx, params)
+	stream, err := c.ChatStream(ctx, params)
 	if err != nil {
 		t.Fatalf("ChatStream failed: %v", err)
 	}
@@ -657,7 +658,7 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 		t.Skip("Skipping streaming tool round-trip test: OPENAI_API_KEY not set")
 	}
 
-	client := NewClient(WithAPIKey(apiKey))
+	c := NewClient(client.WithAPIKey(apiKey))
 
 	type WeatherInput struct {
 		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
@@ -682,7 +683,7 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 		t.Fatalf("Failed to create weather tool: %v", err)
 	}
 
-	messages := []*types.Message{
+	messages := []types.Message{
 		types.NewUserMessage(types.WithText("What's the weather in San Francisco? Be specific.")),
 	}
 
@@ -695,7 +696,7 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	t.Log("Step 1: Streaming initial request to LLM")
-	stream, err := client.ChatStream(ctx, params)
+	stream, err := c.ChatStream(ctx, params)
 	if err != nil {
 		t.Fatalf("ChatStream failed: %v", err)
 	}
@@ -750,8 +751,8 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 		t.Logf("  Tool result: %s", string(resultJSON))
 	}
 
-	messages = append(messages, message)
-	messages = append(messages, types.NewToolResponse(toolCall.ID, toolResult))
+	messages = append(messages, *message)
+	messages = append(messages, types.NewToolResultMessage(toolCall.ID, toolResult))
 
 	params = &types.ChatParams{
 		Model:    "gpt-4o-mini",
@@ -760,7 +761,7 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	}
 
 	t.Log("Step 3: Streaming final response with tool result")
-	stream, err = client.ChatStream(ctx, params)
+	stream, err = c.ChatStream(ctx, params)
 	if err != nil {
 		t.Fatalf("Final ChatStream failed: %v", err)
 	}
@@ -812,4 +813,167 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	}
 
 	t.Log("✓ Complete streaming tool round-trip successful!")
+}
+
+// TestEmbeddingIntegration performs a real API call to OpenAI embeddings
+func TestEmbeddingIntegration(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
+	}
+
+	c := NewClient(client.WithAPIKey(apiKey))
+
+	params := types.NewEmbeddingParams(
+		types.WithEmbeddingModel("text-embedding-3-small"),
+		types.WithInput([]string{"Hello, world!"}),
+	)
+
+	ctx := context.Background()
+	response, err := c.Embed(ctx, params)
+	if err != nil {
+		t.Fatalf("Embed request failed: %v", err)
+	}
+
+	if response == nil {
+		t.Fatal("Response is nil")
+	}
+
+	if response.Model == "" {
+		t.Error("Response Model is empty")
+	}
+
+	if len(response.Embeddings) == 0 {
+		t.Fatal("Response has no embeddings")
+	}
+
+	if len(response.Embeddings[0].Vector) == 0 {
+		t.Error("First embedding vector is empty")
+	}
+
+	if response.Embeddings[0].Index != 0 {
+		t.Errorf("First embedding index = %d, want 0", response.Embeddings[0].Index)
+	}
+
+	if response.Usage == nil {
+		t.Error("Usage is nil")
+	} else {
+		if response.Usage.PromptTokens == 0 {
+			t.Error("PromptTokens is 0")
+		}
+		if response.Usage.TotalTokens == 0 {
+			t.Error("TotalTokens is 0")
+		}
+	}
+
+	t.Logf("Embedding created successfully")
+	t.Logf("Model: %s", response.Model)
+	t.Logf("Vector dimensions: %d", len(response.Embeddings[0].Vector))
+	t.Logf("Prompt tokens: %d", response.Usage.PromptTokens)
+	t.Logf("Total tokens: %d", response.Usage.TotalTokens)
+}
+
+// TestEmbeddingBatch tests batch embedding requests
+func TestEmbeddingBatch(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
+	}
+
+	c := NewClient(client.WithAPIKey(apiKey))
+
+	params := types.NewEmbeddingParams(
+		types.WithEmbeddingModel("text-embedding-3-small"),
+		types.WithInput([]string{
+			"First document",
+			"Second document",
+			"Third document",
+		}),
+	)
+
+	ctx := context.Background()
+	response, err := c.Embed(ctx, params)
+	if err != nil {
+		t.Fatalf("Batch embed request failed: %v", err)
+	}
+
+	if len(response.Embeddings) != 3 {
+		t.Fatalf("Expected 3 embeddings, got %d", len(response.Embeddings))
+	}
+
+	for i, emb := range response.Embeddings {
+		if emb.Index != int64(i) {
+			t.Errorf("Embedding %d has index %d, want %d", i, emb.Index, i)
+		}
+		if len(emb.Vector) == 0 {
+			t.Errorf("Embedding %d has empty vector", i)
+		}
+	}
+
+	t.Logf("Batch embedding created successfully with %d embeddings", len(response.Embeddings))
+}
+
+// TestEmbeddingWithDimensions tests embedding with custom dimensions
+func TestEmbeddingWithDimensions(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
+	}
+
+	c := NewClient(client.WithAPIKey(apiKey))
+
+	params := types.NewEmbeddingParams(
+		types.WithEmbeddingModel("text-embedding-3-small"),
+		types.WithInput([]string{"Test with dimensions"}),
+		types.WithDimensions(512),
+	)
+
+	ctx := context.Background()
+	response, err := c.Embed(ctx, params)
+	if err != nil {
+		t.Fatalf("Embed request with dimensions failed: %v", err)
+	}
+
+	if len(response.Embeddings) == 0 {
+		t.Fatal("No embeddings returned")
+	}
+
+	vectorLen := len(response.Embeddings[0].Vector)
+	if vectorLen != 512 {
+		t.Errorf("Vector length = %d, want 512", vectorLen)
+	}
+
+	t.Logf("Embedding with custom dimensions created successfully (dim=%d)", vectorLen)
+}
+
+// TestEmbeddingWithEncodingFormat tests embedding with encoding format
+func TestEmbeddingWithEncodingFormat(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("Skipping integration test: OPENAI_API_KEY not set")
+	}
+
+	c := NewClient(client.WithAPIKey(apiKey))
+
+	params := types.NewEmbeddingParams(
+		types.WithEmbeddingModel("text-embedding-3-small"),
+		types.WithInput([]string{"Test encoding format"}),
+		types.WithEncodingFormat(types.EncodingFormatFloat),
+	)
+
+	ctx := context.Background()
+	response, err := c.Embed(ctx, params)
+	if err != nil {
+		t.Fatalf("Embed request with encoding format failed: %v", err)
+	}
+
+	if len(response.Embeddings) == 0 {
+		t.Fatal("No embeddings returned")
+	}
+
+	if len(response.Embeddings[0].Vector) == 0 {
+		t.Error("Vector is empty")
+	}
+
+	t.Logf("Embedding with encoding format created successfully")
 }

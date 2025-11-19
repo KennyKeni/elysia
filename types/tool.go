@@ -5,17 +5,60 @@ import (
 	"encoding/json"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type ToolHandler func(ctx context.Context, args map[string]any) (result any, err error)
+type ToolHandler func(ctx context.Context, args map[string]any) (*ToolResult, error)
 
 type Tool interface {
 	Name() string
 	Description() string
 	InputSchema() any
 	OutputSchema() any
-	Execute(ctx context.Context, args map[string]any) (result any, err error)
+	Execute(ctx context.Context, args map[string]any) (*ToolResult, error)
+}
+
+type ToolResult struct {
+	ContentPart       []ContentPart
+	StructuredContent any
+	IsError           bool
+}
+
+type ToolOption func(*ToolResult)
+
+func WithToolText(text string) ToolOption {
+	return func(t *ToolResult) {
+		t.ContentPart = append(t.ContentPart, &ContentPartText{Text: text})
+	}
+}
+
+func WithToolImage(data string) ToolOption {
+	return func(t *ToolResult) {
+		t.ContentPart = append(t.ContentPart, &ContentPartImage{Data: data})
+	}
+}
+
+func WithStructuredContent(content any) ToolOption {
+	return func(t *ToolResult) {
+		t.StructuredContent = content
+	}
+}
+
+func NewToolResult(opts ...ToolOption) *ToolResult {
+	t := &ToolResult{ContentPart: make([]ContentPart, 0)}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
+}
+
+// NewToolResultMessage converts a ToolResult to a tool Message
+// This is a convenience helper for creating tool response messages from tool execution results
+func NewToolResultMessage(toolCallID string, result *ToolResult) Message {
+	return Message{
+		Role:        RoleTool,
+		ContentPart: result.ContentPart,
+		ToolCallID:  &toolCallID,
+	}
 }
 
 type NativeTool struct {
@@ -42,41 +85,8 @@ func (n *NativeTool) OutputSchema() any {
 	return n.outputSchema
 }
 
-func (n *NativeTool) Execute(ctx context.Context, args map[string]any) (result any, err error) {
+func (n *NativeTool) Execute(ctx context.Context, args map[string]any) (*ToolResult, error) {
 	return n.handler(ctx, args)
-}
-
-type MCPToolAdapter struct {
-	mcpTool mcp.Tool
-	session *mcp.ClientSession
-}
-
-func (m *MCPToolAdapter) Name() string {
-	return m.mcpTool.Name
-}
-
-func (m *MCPToolAdapter) Description() string {
-	return m.mcpTool.Description
-}
-
-func (m *MCPToolAdapter) InputSchema() any {
-	return m.mcpTool.InputSchema
-}
-
-func (m *MCPToolAdapter) OutputSchema() any {
-	return m.mcpTool.OutputSchema
-}
-
-func (m *MCPToolAdapter) Execute(ctx context.Context, args map[string]any) (result any, err error) {
-	result, err = m.session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      m.mcpTool.Name,
-		Arguments: args,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
 }
 
 // NewNativeTool creates a new native tool with automatic schema generation from Go types
@@ -107,7 +117,7 @@ func NewNativeTool[TIn, TOut any](
 	}
 
 	// Wrap the typed handler with validation
-	wrappedHandler := func(ctx context.Context, args map[string]any) (any, error) {
+	wrappedHandler := func(ctx context.Context, args map[string]any) (*ToolResult, error) {
 		// Validate input against schema
 		if err := resolvedInput.Validate(args); err != nil {
 			return nil, err
@@ -126,23 +136,33 @@ func NewNativeTool[TIn, TOut any](
 		// Execute handler
 		result, err := handler(ctx, typedArgs)
 		if err != nil {
-			return nil, err
+			return &ToolResult{
+				ContentPart:       []ContentPart{&ContentPartText{Text: err.Error()}},
+				StructuredContent: nil,
+				IsError:           true,
+			}, nil
 		}
 
-		// Validate output against schema
 		resultJSON, err := json.Marshal(result)
 		if err != nil {
 			return nil, err
 		}
-		var resultMap map[string]any
-		if err := json.Unmarshal(resultJSON, &resultMap); err != nil {
+
+		// Validate output
+		var resultValue any
+		if err := json.Unmarshal(resultJSON, &resultValue); err != nil {
 			return nil, err
 		}
-		if err := resolvedOutput.Validate(resultMap); err != nil {
+		if err := resolvedOutput.Validate(resultValue); err != nil {
 			return nil, err
 		}
 
-		return result, nil
+		return &ToolResult{
+			ContentPart:       []ContentPart{&ContentPartText{Text: string(resultJSON)}},
+			StructuredContent: result,
+			IsError:           false,
+		}, nil
+
 	}
 
 	return &NativeTool{
@@ -152,12 +172,4 @@ func NewNativeTool[TIn, TOut any](
 		outputSchema: outputSchema,
 		handler:      wrappedHandler,
 	}, nil
-}
-
-// NewMCPToolAdapter creates a new MCP tool adapter
-func NewMCPToolAdapter(mcpTool mcp.Tool, session *mcp.ClientSession) *MCPToolAdapter {
-	return &MCPToolAdapter{
-		mcpTool: mcpTool,
-		session: session,
-	}
 }

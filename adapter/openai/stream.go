@@ -18,12 +18,12 @@ func FromChatCompletionChunk(chunk *openai.ChatCompletionChunk) *types.StreamChu
 		ID:      chunk.ID,
 		Created: chunk.Created,
 		Model:   chunk.Model,
-		Choices: make([]*types.StreamChoice, len(chunk.Choices)),
+		Choices: make([]types.StreamChoice, len(chunk.Choices)),
 	}
 
 	for i := range chunk.Choices {
 		choice := chunk.Choices[i]
-		streamChunk.Choices[i] = &types.StreamChoice{
+		streamChunk.Choices[i] = types.StreamChoice{
 			Index:        int(choice.Index),
 			FinishReason: choice.FinishReason,
 			Delta:        toMessageDelta(&choice.Delta),
@@ -49,7 +49,7 @@ func toChunkUsage(chunk *openai.ChatCompletionChunk) *types.Usage {
 		return nil
 	}
 
-	return toUsage(&chunk.Usage)
+	return FromUsage(&chunk.Usage)
 }
 
 func toMessageDelta(delta *openai.ChatCompletionChunkChoiceDelta) *types.MessageDelta {
@@ -63,9 +63,9 @@ func toMessageDelta(delta *openai.ChatCompletionChunkChoiceDelta) *types.Message
 		Refusal: delta.Refusal,
 	}
 
-	toolCalls := make([]*types.ToolCallDelta, 0, len(delta.ToolCalls))
+	toolCalls := make([]types.ToolCallDelta, 0, len(delta.ToolCalls))
 	for _, call := range delta.ToolCalls {
-		toolCalls = append(toolCalls, &types.ToolCallDelta{
+		toolCalls = append(toolCalls, types.ToolCallDelta{
 			Index:        int(call.Index),
 			ID:           call.ID,
 			FunctionName: call.Function.Name,
@@ -75,7 +75,7 @@ func toMessageDelta(delta *openai.ChatCompletionChunkChoiceDelta) *types.Message
 
 	// Handle legacy function_call field by synthesising a tool call delta at index 0.
 	if delta.FunctionCall.Name != "" || delta.FunctionCall.Arguments != "" {
-		toolCalls = append(toolCalls, &types.ToolCallDelta{
+		toolCalls = append(toolCalls, types.ToolCallDelta{
 			Index:        0,
 			FunctionName: delta.FunctionCall.Name,
 			Arguments:    delta.FunctionCall.Arguments,

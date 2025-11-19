@@ -48,10 +48,8 @@ func (ma *MessageAccumulator) Update(delta *MessageDelta) {
 		ma.refusal.WriteString(delta.Refusal)
 	}
 
-	for _, callDelta := range delta.ToolCalls {
-		if callDelta == nil {
-			continue
-		}
+	for i := range delta.ToolCalls {
+		callDelta := &delta.ToolCalls[i]
 
 		tc := ma.toolCalls[callDelta.Index]
 		if tc == nil {
@@ -101,7 +99,7 @@ func (ma *MessageAccumulator) Message() (*Message, error) {
 		}
 		sort.Ints(indexes)
 
-		msg.ToolCalls = make([]*ToolCall, 0, len(indexes))
+		msg.ToolCalls = make([]ToolCall, 0, len(indexes))
 		for _, idx := range indexes {
 			tc := ma.toolCalls[idx]
 			if tc == nil {
@@ -113,7 +111,7 @@ func (ma *MessageAccumulator) Message() (*Message, error) {
 				return nil, err
 			}
 
-			msg.ToolCalls = append(msg.ToolCalls, &ToolCall{
+			msg.ToolCalls = append(msg.ToolCalls, ToolCall{
 				ID: tc.id,
 				Function: ToolFunction{
 					Name:      tc.name,

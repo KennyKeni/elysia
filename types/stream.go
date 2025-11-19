@@ -87,7 +87,7 @@ type StreamChunk struct {
 	ID      string
 	Created int64
 	Model   string
-	Choices []*StreamChoice
+	Choices []StreamChoice
 	Usage   *Usage
 }
 
@@ -102,7 +102,7 @@ type StreamChoice struct {
 type MessageDelta struct {
 	Role      Role
 	Content   string
-	ToolCalls []*ToolCallDelta
+	ToolCalls []ToolCallDelta
 	Refusal   string
 }
 

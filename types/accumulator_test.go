@@ -8,7 +8,7 @@ func TestMessageAccumulatorBuildsMessage(t *testing.T) {
 	acc.Update(&MessageDelta{
 		Role:    RoleAssistant,
 		Content: "Hel",
-		ToolCalls: []*ToolCallDelta{
+		ToolCalls: []ToolCallDelta{
 			{
 				Index:        0,
 				ID:           "call_1",
@@ -21,7 +21,7 @@ func TestMessageAccumulatorBuildsMessage(t *testing.T) {
 	acc.Update(&MessageDelta{
 		Content: "lo",
 		Refusal: "",
-		ToolCalls: []*ToolCallDelta{
+		ToolCalls: []ToolCallDelta{
 			{
 				Index:     0,
 				Arguments: `ue"}`,
@@ -74,7 +74,7 @@ func TestMessageAccumulatorBuildsMessage(t *testing.T) {
 func TestMessageAccumulatorInvalidJSON(t *testing.T) {
 	acc := NewMessageAccumulator()
 	acc.Update(&MessageDelta{
-		ToolCalls: []*ToolCallDelta{
+		ToolCalls: []ToolCallDelta{
 			{
 				Index:     0,
 				Arguments: `{"unterminated"`,

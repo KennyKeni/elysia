@@ -14,7 +14,7 @@ type unsupportedContentPart struct{}
 func (*unsupportedContentPart) IsContentPart() {}
 
 func TestToChatCompletionMessageUnsupportedRole(t *testing.T) {
-	messages := []*types.Message{
+	messages := []types.Message{
 		{
 			Role: "unknown-role",
 		},
@@ -29,7 +29,7 @@ func TestToChatCompletionMessageUnsupportedUserContent(t *testing.T) {
 	msg := types.NewUserMessage()
 	msg.ContentPart = append(msg.ContentPart, &unsupportedContentPart{})
 
-	if _, err := ToChatCompletionMessage("", []*types.Message{msg}); err == nil || !errors.Is(err, ErrUnsupportedUserContentPart) {
+	if _, err := ToChatCompletionMessage("", []types.Message{msg}); err == nil || !errors.Is(err, ErrUnsupportedUserContentPart) {
 		t.Fatalf("expected ErrUnsupportedUserContentPart, got %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestToChatCompletionMessageUnsupportedUserContent(t *testing.T) {
 func TestToChatCompletionMessageUnsupportedAssistantContent(t *testing.T) {
 	msg := types.NewAssistantMessage(types.WithImage("image-data"))
 
-	if _, err := ToChatCompletionMessage("", []*types.Message{msg}); err == nil || !errors.Is(err, ErrUnsupportedAssistantContentPart) {
+	if _, err := ToChatCompletionMessage("", []types.Message{msg}); err == nil || !errors.Is(err, ErrUnsupportedAssistantContentPart) {
 		t.Fatalf("expected ErrUnsupportedAssistantContentPart, got %v", err)
 	}
 }
@@ -45,7 +45,7 @@ func TestToChatCompletionMessageUnsupportedAssistantContent(t *testing.T) {
 func TestToChatCompletionMessageUnsupportedToolContent(t *testing.T) {
 	msg := types.NewToolMessage(types.WithImage("image-data"), types.WithToolCallID("call-1"))
 
-	if _, err := ToChatCompletionMessage("", []*types.Message{msg}); err == nil || !errors.Is(err, ErrUnsupportedToolContentPart) {
+	if _, err := ToChatCompletionMessage("", []types.Message{msg}); err == nil || !errors.Is(err, ErrUnsupportedToolContentPart) {
 		t.Fatalf("expected ErrUnsupportedToolContentPart, got %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestToChatCompletionMessageUnsupportedToolContent(t *testing.T) {
 func TestToChatCompletionMessageMissingToolCallID(t *testing.T) {
 	msg := types.NewToolMessage(types.WithText("result"))
 
-	if _, err := ToChatCompletionMessage("", []*types.Message{msg}); err == nil || !errors.Is(err, ErrMissingToolCallID) {
+	if _, err := ToChatCompletionMessage("", []types.Message{msg}); err == nil || !errors.Is(err, ErrMissingToolCallID) {
 		t.Fatalf("expected ErrMissingToolCallID, got %v", err)
 	}
 }
@@ -69,15 +69,15 @@ func TestToChatCompletionMessageSuccess(t *testing.T) {
 		},
 	}
 
-	messages := []*types.Message{
+	messages := []types.Message{
 		types.NewUserMessage(types.WithText("What's the weather?")),
 		types.NewAssistantMessage(
 			types.WithText("Let me check."),
-			types.WithToolCalls(toolCall),
+			types.WithToolCalls(*toolCall),
 		),
 		types.NewToolMessage(
 			types.WithToolCallID(toolCall.ID),
-			types.WithToolResult(map[string]any{"temperature": 70}),
+			types.WithText(`{"temperature":70}`),
 		),
 	}
 
@@ -132,53 +132,6 @@ func TestToChatCompletionMessageSuccess(t *testing.T) {
 	}
 }
 
-func TestMarshalToolResult(t *testing.T) {
-	type sample struct {
-		Foo string `json:"foo"`
-		N   int    `json:"n"`
-	}
-
-	tests := []struct {
-		name     string
-		input    any
-		expected string
-	}{
-		{
-			name:     "nil",
-			input:    nil,
-			expected: "null",
-		},
-		{
-			name:     "string",
-			input:    "ok",
-			expected: "ok",
-		},
-		{
-			name:     "bytes",
-			input:    []byte("data"),
-			expected: "data",
-		},
-		{
-			name:     "struct",
-			input:    sample{Foo: "bar", N: 1},
-			expected: "{\"foo\":\"bar\",\"n\":1}",
-		},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := marshalToolResult(tc.input)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.expected {
-				t.Fatalf("expected %q, got %q", tc.expected, got)
-			}
-		})
-	}
-}
-
 func BenchmarkToChatCompletionMessage(b *testing.B) {
 	toolCall := &types.ToolCall{
 		ID: "call-1",
@@ -191,18 +144,18 @@ func BenchmarkToChatCompletionMessage(b *testing.B) {
 		},
 	}
 
-	messages := []*types.Message{
+	messages := []types.Message{
 		types.NewUserMessage(
 			types.WithText("What's the weather?"),
 			types.WithImage("iVBORw0KGgoAAAANSUhEUgAAAAUA"),
 		),
 		types.NewAssistantMessage(
 			types.WithText("Let me call the weather API."),
-			types.WithToolCalls(toolCall),
+			types.WithToolCalls(*toolCall),
 		),
 		types.NewToolMessage(
 			types.WithToolCallID(toolCall.ID),
-			types.WithToolResult(map[string]any{"temperature": 70, "condition": "sunny"}),
+			types.WithText(`{"temperature":70,"condition":"sunny"}`),
 		),
 	}
 

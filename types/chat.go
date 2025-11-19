@@ -7,7 +7,7 @@ import "encoding/json"
 type ChatParams struct {
 	// Core parameters
 	Model         string         `json:"model"`
-	Messages      []*Message     `json:"messages"`
+	Messages      []Message      `json:"messages"`
 	SystemPrompt  string         `json:"system_prompt,omitempty"`
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
 
@@ -30,7 +30,7 @@ type ChatParams struct {
 
 type ChatParamOption func(*ChatParams)
 
-func WithMessages(messages []*Message) ChatParamOption {
+func WithMessages(messages []Message) ChatParamOption {
 	return func(p *ChatParams) {
 		p.Messages = append(p.Messages, messages...)
 	}
@@ -114,7 +114,7 @@ type ChatResponse struct {
 	ID      string
 	Created int64
 	Model   string
-	Choices []*Choice
+	Choices []Choice
 	Usage   *Usage
 
 	// Provider-specific extras
@@ -130,9 +130,9 @@ type Choice struct {
 
 // Usage represents token usage statistics for the request.
 type Usage struct {
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
+	PromptTokens     int64
+	CompletionTokens int64
+	TotalTokens      int64
 }
 
 // ToolChoiceMode represents the mode for tool selection.
