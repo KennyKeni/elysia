@@ -31,3 +31,6 @@ go.work.sum
 .idea/
 .vscode/
 [A-Z]:\\*
+
+# Local planning files
+TODO.md
