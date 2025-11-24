@@ -21,8 +21,8 @@ type ChatParams struct {
 	Stop []string `json:"stop,omitempty"`
 
 	// Tool parameters
-	Tools      []Tool      `json:"tools,omitempty"`
-	ToolChoice *ToolChoice `json:"tool_choice,omitempty"`
+	Tools      []ToolDefinition `json:"tools,omitempty"`
+	ToolChoice *ToolChoice      `json:"tool_choice,omitempty"`
 
 	// Provider-specific extras
 	Extra map[string]any `json:"-"`
@@ -66,9 +66,15 @@ func WithTopK(topK int) ChatParamOption {
 	}
 }
 
-func WithTools(tools []Tool) ChatParamOption {
+//func WithTools(tools []Tool) ChatParamOption {
+//	return func(p *ChatParams) {
+//		p.Tools = append(p.Tools, tools...)
+//	}
+//}
+
+func WithToolDefinitions(toolDefinitions []ToolDefinition) ChatParamOption {
 	return func(p *ChatParams) {
-		p.Tools = append(p.Tools, tools...)
+		p.Tools = append(p.Tools, toolDefinitions...)
 	}
 }
 
@@ -151,6 +157,8 @@ type ToolChoice struct {
 	Name string         `json:"-"` // Only used when Mode == ToolChoiceModeTool
 }
 
+// TODO Could do away with some of these
+
 // ToolChoiceAuto creates a ToolChoice that lets the model decide.
 func ToolChoiceAuto() *ToolChoice {
 	return &ToolChoice{Mode: ToolChoiceModeAuto}
@@ -167,8 +175,8 @@ func ToolChoiceNone() *ToolChoice {
 }
 
 // ToolChoiceTool creates a ToolChoice that forces a specific tool.
-func ToolChoiceTool(tool Tool) *ToolChoice {
-	return &ToolChoice{Mode: ToolChoiceModeTool, Name: tool.Name()}
+func ToolChoiceTool(tool ToolDefinition) *ToolChoice {
+	return &ToolChoice{Mode: ToolChoiceModeTool, Name: tool.Name}
 }
 
 // ToolChoiceToolWithName creates a ToolChoice with a tool name.

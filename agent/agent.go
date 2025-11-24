@@ -6,7 +6,7 @@ type Agent[TDeps, TOutput any] struct {
 	systemPrompt     string
 	systemPromptFunc func(TDeps) string
 	client           types.Client
-	tools            []types.Tool
+	tools            []*Tool[TDeps]
 	maxIterations    int
 }
 

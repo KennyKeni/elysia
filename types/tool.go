@@ -1,21 +1,13 @@
 package types
 
-// RunContext carries dependencies, message history, and usage stats to tools
-// Used by agent layer, not base SDK
-type RunContext[TDep any] struct {
-	Deps     TDep
-	Messages []Message
-	Usage    Usage
-}
-
 // ToolDefinition is metadata describing a tool for the LLM
 // The client sends these to the LLM, but does not execute tools
 // Execution is handled by the caller (agent layer or manual)
 type ToolDefinition struct {
 	Name         string
 	Description  string
-	InputSchema  any
-	OutputSchema any
+	InputSchema  map[string]any
+	OutputSchema map[string]any
 }
 
 type ToolResult struct {
@@ -62,4 +54,3 @@ func NewToolResultMessage(toolCallID string, result *ToolResult) Message {
 		ToolCallID:  &toolCallID,
 	}
 }
-

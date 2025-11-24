@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -312,31 +313,25 @@ func TestChatWithTools(t *testing.T) {
 
 	c := NewClient(client.WithAPIKey(apiKey))
 
-	// Define input/output types for the weather tool
-	type WeatherInput struct {
-		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
-		Unit     string `json:"unit,omitempty" jsonschema:"The temperature unit to use (celsius or fahrenheit)"`
-	}
-
-	type WeatherOutput struct {
-		Temperature float64 `json:"temperature" jsonschema:"The temperature in the specified unit"`
-		Condition   string  `json:"condition" jsonschema:"The weather condition (e.g. sunny, cloudy, rainy)"`
-	}
-
-	// Create typed tool with automatic schema generation
-	weatherTool, err := types.NewNativeTool(
-		"get_weather",
-		"Get the current weather for a location",
-		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
-			// Mock handler - in real usage this would fetch actual weather
-			return WeatherOutput{
-				Temperature: 72,
-				Condition:   "sunny",
-			}, nil
+	// Create tool definition with schema
+	weatherTool := types.ToolDefinition{
+		Name:        "get_weather",
+		Description: "Get the current weather for a location",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"location": map[string]interface{}{
+					"type":        "string",
+					"description": "The city and state, e.g. San Francisco, CA",
+				},
+				"unit": map[string]interface{}{
+					"type":        "string",
+					"description": "The temperature unit to use (celsius or fahrenheit)",
+					"enum":        []string{"celsius", "fahrenheit"},
+				},
+			},
+			"required": []string{"location"},
 		},
-	)
-	if err != nil {
-		t.Fatalf("Failed to create weather tool: %v", err)
 	}
 
 	params := &types.ChatParams{
@@ -344,7 +339,7 @@ func TestChatWithTools(t *testing.T) {
 		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("What's the weather like in San Francisco?")),
 		},
-		Tools: []types.Tool{weatherTool},
+		Tools: []types.ToolDefinition{weatherTool},
 	}
 
 	ctx := context.Background()
@@ -393,31 +388,33 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 
 	c := NewClient(client.WithAPIKey(apiKey))
 
-	// Define input/output types for the weather tool
-	type WeatherInput struct {
-		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
-		Unit     string `json:"unit,omitempty" jsonschema:"The temperature unit to use (celsius or fahrenheit)"`
-	}
-
-	type WeatherOutput struct {
-		Temperature float64 `json:"temperature" jsonschema:"The temperature in the specified unit"`
-		Condition   string  `json:"condition" jsonschema:"The weather condition (e.g. sunny, cloudy, rainy)"`
-	}
-
-	// Create typed tool with automatic schema generation
-	weatherTool, err := types.NewNativeTool(
-		"get_weather",
-		"Get the current weather for a location",
-		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
-			// Mock handler returning weather data
-			return WeatherOutput{
-				Temperature: 72,
-				Condition:   "sunny",
-			}, nil
+	// Create tool definition
+	weatherTool := types.ToolDefinition{
+		Name:        "get_weather",
+		Description: "Get the current weather for a location",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"location": map[string]interface{}{
+					"type":        "string",
+					"description": "The city and state, e.g. San Francisco, CA",
+				},
+				"unit": map[string]interface{}{
+					"type":        "string",
+					"description": "The temperature unit to use (celsius or fahrenheit)",
+					"enum":        []string{"celsius", "fahrenheit"},
+				},
+			},
+			"required": []string{"location"},
 		},
-	)
-	if err != nil {
-		t.Fatalf("Failed to create weather tool: %v", err)
+	}
+
+	// Mock weather function to execute when tool is called
+	executeWeatherTool := func(ctx context.Context, args map[string]any) (map[string]any, error) {
+		return map[string]any{
+			"temperature": 72,
+			"condition":   "sunny",
+		}, nil
 	}
 
 	// Step 1: Initial request with user question
@@ -426,9 +423,9 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	params := &types.ChatParams{
-		Model:    "gpt-4o-mini",
-		Messages: messages,
-		Tools:    []types.Tool{weatherTool},
+		Model:           "gpt-4o-mini",
+		Messages:        messages,
+		Tools: []types.ToolDefinition{weatherTool},
 	}
 
 	ctx := context.Background()
@@ -458,7 +455,7 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	t.Logf("  Arguments: %+v", toolCall.Function.Arguments)
 
 	// Execute the tool
-	toolResult, err := weatherTool.Execute(ctx, toolCall.Function.Arguments)
+	toolResult, err := executeWeatherTool(ctx, toolCall.Function.Arguments)
 	if err != nil {
 		t.Fatalf("Tool execution failed: %v", err)
 	}
@@ -472,13 +469,20 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	// Step 3: Send tool result back to LLM
 	messages = append(messages, *choice.Message)
 
-	toolResultMessage := types.NewToolResultMessage(toolCall.ID, toolResult)
+	// Create tool result message with the execution result
+	toolResultMessage := types.Message{
+		Role: types.RoleTool,
+		ContentPart: []types.ContentPart{
+			types.NewContentPartText(fmt.Sprintf(`{"temperature": 72, "condition": "sunny"}`)),
+		},
+		ToolCallID: &toolCall.ID,
+	}
 	messages = append(messages, toolResultMessage)
 
 	params = &types.ChatParams{
-		Model:    "gpt-4o-mini",
-		Messages: messages,
-		Tools:    []types.Tool{weatherTool},
+		Model:           "gpt-4o-mini",
+		Messages:        messages,
+		Tools: []types.ToolDefinition{weatherTool},
 	}
 
 	t.Log("Step 3: Sending tool result back to LLM for final answer")
@@ -523,28 +527,24 @@ func TestChatStreamWithTools(t *testing.T) {
 
 	c := NewClient(client.WithAPIKey(apiKey))
 
-	type WeatherInput struct {
-		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
-		Unit     string `json:"unit,omitempty" jsonschema:"The temperature unit to use (celsius or fahrenheit)"`
-	}
-
-	type WeatherOutput struct {
-		Temperature float64 `json:"temperature" jsonschema:"The temperature in the specified unit"`
-		Condition   string  `json:"condition" jsonschema:"The weather condition (e.g. sunny, cloudy, rainy)"`
-	}
-
-	weatherTool, err := types.NewNativeTool(
-		"get_weather",
-		"Get the current weather for a location",
-		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
-			return WeatherOutput{
-				Temperature: 72,
-				Condition:   "sunny",
-			}, nil
+	weatherTool := types.ToolDefinition{
+		Name:        "get_weather",
+		Description: "Get the current weather for a location",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"location": map[string]interface{}{
+					"type":        "string",
+					"description": "The city and state, e.g. San Francisco, CA",
+				},
+				"unit": map[string]interface{}{
+					"type":        "string",
+					"description": "The temperature unit to use (celsius or fahrenheit)",
+					"enum":        []string{"celsius", "fahrenheit"},
+				},
+			},
+			"required": []string{"location"},
 		},
-	)
-	if err != nil {
-		t.Fatalf("Failed to create weather tool: %v", err)
 	}
 
 	params := &types.ChatParams{
@@ -552,7 +552,7 @@ func TestChatStreamWithTools(t *testing.T) {
 		Messages: []types.Message{
 			types.NewUserMessage(types.WithText("What's the weather in San Francisco?")),
 		},
-		Tools: []types.Tool{weatherTool},
+		Tools: []types.ToolDefinition{weatherTool},
 	}
 
 	ctx := context.Background()
@@ -660,27 +660,27 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 
 	c := NewClient(client.WithAPIKey(apiKey))
 
-	type WeatherInput struct {
-		Location string `json:"location" jsonschema:"The city and state, e.g. San Francisco, CA"`
-	}
-
-	type WeatherOutput struct {
-		Temperature float64 `json:"temperature" jsonschema:"The temperature"`
-		Condition   string  `json:"condition" jsonschema:"The weather condition"`
-	}
-
-	weatherTool, err := types.NewNativeTool(
-		"get_weather",
-		"Get the current weather for a location",
-		func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
-			return WeatherOutput{
-				Temperature: 72,
-				Condition:   "sunny",
-			}, nil
+	weatherTool := types.ToolDefinition{
+		Name:        "get_weather",
+		Description: "Get the current weather for a location",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"location": map[string]interface{}{
+					"type":        "string",
+					"description": "The city and state, e.g. San Francisco, CA",
+				},
+			},
+			"required": []string{"location"},
 		},
-	)
-	if err != nil {
-		t.Fatalf("Failed to create weather tool: %v", err)
+	}
+
+	// Mock weather function
+	executeWeatherTool := func(ctx context.Context, args map[string]any) (map[string]any, error) {
+		return map[string]any{
+			"temperature": 72,
+			"condition":   "sunny",
+		}, nil
 	}
 
 	messages := []types.Message{
@@ -688,9 +688,9 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	}
 
 	params := &types.ChatParams{
-		Model:    "gpt-4o-mini",
-		Messages: messages,
-		Tools:    []types.Tool{weatherTool},
+		Model:           "gpt-4o-mini",
+		Messages:        messages,
+		Tools: []types.ToolDefinition{weatherTool},
 	}
 
 	ctx := context.Background()
@@ -742,7 +742,7 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	t.Logf("  Tool: %s", toolCall.Function.Name)
 	t.Logf("  Arguments: %+v", toolCall.Function.Arguments)
 
-	toolResult, err := weatherTool.Execute(ctx, toolCall.Function.Arguments)
+	toolResult, err := executeWeatherTool(ctx, toolCall.Function.Arguments)
 	if err != nil {
 		t.Fatalf("Tool execution failed: %v", err)
 	}
@@ -752,12 +752,21 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	}
 
 	messages = append(messages, *message)
-	messages = append(messages, types.NewToolResultMessage(toolCall.ID, toolResult))
+
+	// Create tool result message
+	toolResultMessage := types.Message{
+		Role: types.RoleTool,
+		ContentPart: []types.ContentPart{
+			types.NewContentPartText(`{"temperature": 72, "condition": "sunny"}`),
+		},
+		ToolCallID: &toolCall.ID,
+	}
+	messages = append(messages, toolResultMessage)
 
 	params = &types.ChatParams{
-		Model:    "gpt-4o-mini",
-		Messages: messages,
-		Tools:    []types.Tool{weatherTool},
+		Model:           "gpt-4o-mini",
+		Messages:        messages,
+		Tools: []types.ToolDefinition{weatherTool},
 	}
 
 	t.Log("Step 3: Streaming final response with tool result")

@@ -43,9 +43,9 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 
 	// Convert tools if provided
 	if len(chatParams.Tools) > 0 {
-		tools, err := ToTools(chatParams.Tools)
+		tools, err := ToToolDefinitions(chatParams.Tools)
 		if err != nil {
-			return openai.ChatCompletionNewParams{}, fmt.Errorf("ToTools failed: %w", err)
+			return openai.ChatCompletionNewParams{}, fmt.Errorf("ToToolDefinitions failed: %w", err)
 		}
 		request.Tools = tools
 
