@@ -112,3 +112,13 @@ func NewTool[TDep, TIn, TOut any](
 		Execute: validateAndExecute,
 	}, nil
 }
+
+func GetToolDefinitions[TDep any](agentTools []Tool[TDep]) []types.ToolDefinition {
+	res := make([]types.ToolDefinition, len(agentTools))
+
+	for i, tool := range agentTools {
+		res[i] = tool.ToolDefinition
+	}
+
+	return res
+}

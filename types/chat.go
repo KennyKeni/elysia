@@ -24,6 +24,9 @@ type ChatParams struct {
 	Tools      []ToolDefinition `json:"tools,omitempty"`
 	ToolChoice *ToolChoice      `json:"tool_choice,omitempty"`
 
+	// Response
+	ResponseFormat ResponseFormat
+
 	// Provider-specific extras
 	Extra map[string]any `json:"-"`
 }
@@ -66,11 +69,11 @@ func WithTopK(topK int) ChatParamOption {
 	}
 }
 
-//func WithTools(tools []Tool) ChatParamOption {
-//	return func(p *ChatParams) {
-//		p.Tools = append(p.Tools, tools...)
-//	}
-//}
+func WithResponseFormat(format ResponseFormat) ChatParamOption {
+	return func(p *ChatParams) {
+		p.ResponseFormat = format
+	}
+}
 
 func WithToolDefinitions(toolDefinitions []ToolDefinition) ChatParamOption {
 	return func(p *ChatParams) {
@@ -113,6 +116,29 @@ func WithStreamOptions(options StreamOptions) ChatParamOption {
 // WithStreamIncludeUsage enables usage deltas in streaming responses where supported.
 func WithStreamIncludeUsage() ChatParamOption {
 	return WithStreamOptions(StreamOptions{IncludeUsage: true})
+}
+
+type ResponseFormatMode string
+
+const (
+	// ResponseFormatModeNative uses provider's native structured output (OpenAI response_format, etc.)
+	// Falls back to Tool mode if provider doesn't support it.
+	ResponseFormatModeNative ResponseFormatMode = "native"
+
+	// ResponseFormatModeTool creates a hidden tool for the model to call with structured output.
+	// Works with all providers that support tool calling.
+	ResponseFormatModeTool ResponseFormatMode = "tool"
+
+	// ResponseFormatModePrompted adds instructions to return JSON matching the schema.
+	// Broadest compatibility but least reliable.
+	ResponseFormatModePrompted ResponseFormatMode = "prompted"
+)
+
+type ResponseFormat struct {
+	Mode        ResponseFormatMode
+	Name        string
+	Description string
+	Schema      map[string]any
 }
 
 // ChatResponse represents the response from a chat completion request.

@@ -31,9 +31,6 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 	}
 
 	// topK is ignored
-	//if chatParams.TopK != nil {
-	//	slog.Warn("OpenAI does not support top K parameter")
-	//}
 
 	messages, err := ToChatCompletionMessage(chatParams.SystemPrompt, chatParams.Messages)
 	if err != nil {
