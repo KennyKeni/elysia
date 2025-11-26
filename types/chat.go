@@ -1,6 +1,6 @@
 package types
 
-import "encoding/json"
+import json "encoding/json/v2"
 
 // ChatParams represents parameters for a chat completion request.
 // Supports OpenAI, Anthropic, and Google GenAI providers.
@@ -201,6 +201,7 @@ func (tc *ToolChoice) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		tc.Mode = ToolChoiceMode(s)
+		tc.Name = ""
 		return nil
 	}
 

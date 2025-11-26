@@ -2,11 +2,10 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 
 	"github.com/KennyKeni/elysia/types"
-	"github.com/google/jsonschema-go/jsonschema"
 )
 
 type RunContext[TDep any] struct {
@@ -20,61 +19,51 @@ type Tool[TDep any] struct {
 	Execute func(ctx context.Context, rc *RunContext[TDep], args map[string]any) (*types.ToolResult, error)
 }
 
+// WrapTool wraps a types.Tool (MCP, external tools) into an agent.Tool
+func WrapTool[TDep any](tool *types.Tool) *Tool[TDep] {
+	return &Tool[TDep]{
+		ToolDefinition: tool.ToolDefinition,
+		Execute: func(ctx context.Context, rc *RunContext[TDep], args map[string]any) (*types.ToolResult, error) {
+			return tool.Execute(ctx, args)
+		},
+	}
+}
+
+// NewTool creates an agent tool with typed input/output and RunContext access
 func NewTool[TDep, TIn, TOut any](
 	name, description string,
 	handler func(context.Context, *RunContext[TDep], TIn) (TOut, error),
 ) (*Tool[TDep], error) {
-	inputSchema, err := jsonschema.For[TIn](nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate input schema: %w", err)
-	}
-
-	outputSchema, err := jsonschema.For[TOut](nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate output schema: %w", err)
-	}
-
-	resolvedInputSchema, err := inputSchema.Resolve(nil)
+	resolvedInputSchema, err := types.ResolveSchemaFor[TIn]()
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve input schema: %w", err)
 	}
 
-	resolvedOutputSchema, err := outputSchema.Resolve(nil)
+	resolvedOutputSchema, err := types.ResolveSchemaFor[TOut]()
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve output schema: %w", err)
 	}
 
+	inputSchemaMap, err := types.SchemaMapFor[TIn]()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate input schema map: %w", err)
+	}
+
+	outputSchemaMap, err := types.SchemaMapFor[TOut]()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate output schema map: %w", err)
+	}
+
 	validateAndExecute := func(ctx context.Context, rc *RunContext[TDep], args map[string]any) (*types.ToolResult, error) {
 		// Validate input against the schema
-		if err := resolvedInputSchema.Validate(args); err != nil {
-			return &types.ToolResult{
-				ContentPart: []types.ContentPart{
-					types.NewContentPartText(fmt.Sprintf("Input validation error: %v", err)),
-				},
-				IsError: true,
-			}, nil
+		if errResult := types.Validate(resolvedInputSchema, args); errResult != nil {
+			return errResult, nil
 		}
 
-		// Marshals into a JSON string
-		argsBytes, err := json.Marshal(args)
-		if err != nil {
-			return &types.ToolResult{
-				ContentPart: []types.ContentPart{
-					types.NewContentPartText(fmt.Sprintf("Failed to marshal input: %v", err)),
-				},
-				IsError: true,
-			}, nil
-		}
-
-		// Unmarshal into TIn
-		var typedInput TIn
-		if err := json.Unmarshal(argsBytes, &typedInput); err != nil {
-			return &types.ToolResult{
-				ContentPart: []types.ContentPart{
-					types.NewContentPartText(fmt.Sprintf("Failed to parse input: %v", err)),
-				},
-				IsError: true,
-			}, nil
+		// Unmarshal args into typed input
+		typedInput, errResult := types.UnmarshalArgs[TIn](args)
+		if errResult != nil {
+			return errResult, nil
 		}
 
 		// Run handler
@@ -88,16 +77,12 @@ func NewTool[TDep, TIn, TOut any](
 			}, nil
 		}
 
-		// Validate input against the outputSchema
-		if err := resolvedOutputSchema.Validate(output); err != nil {
-			return &types.ToolResult{
-				ContentPart: []types.ContentPart{
-					types.NewContentPartText(fmt.Sprintf("Output validation error: %v", err)),
-				},
-				IsError: true,
-			}, nil
+		// Validate output against the schema
+		if errResult := types.Validate(resolvedOutputSchema, output); errResult != nil {
+			return errResult, nil
 		}
 
+		// Marshal output to ToolResult
 		outputJSON, err := json.Marshal(output)
 		if err != nil {
 			return &types.ToolResult{
@@ -115,24 +100,6 @@ func NewTool[TDep, TIn, TOut any](
 			StructuredContent: output,
 			IsError:           false,
 		}, nil
-	}
-
-	var inputSchemaMap, outputSchemaMap map[string]any
-
-	inputSchemaBytes, err := json.Marshal(inputSchema)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal input schema: %w", err)
-	}
-	if err := json.Unmarshal(inputSchemaBytes, &inputSchemaMap); err != nil {
-		return nil, fmt.Errorf("failed to convert input schema to map: %w", err)
-	}
-
-	outputSchemaBytes, err := json.Marshal(outputSchema)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal output schema: %w", err)
-	}
-	if err := json.Unmarshal(outputSchemaBytes, &outputSchemaMap); err != nil {
-		return nil, fmt.Errorf("failed to convert output schema to map: %w", err)
 	}
 
 	return &Tool[TDep]{

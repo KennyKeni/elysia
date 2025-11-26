@@ -1,7 +1,8 @@
 package types
 
 import (
-	"encoding/json"
+	json "encoding/json/v2"
+	"encoding/json/jsontext"
 	"fmt"
 	"sort"
 	"strings"
@@ -135,7 +136,9 @@ func (tc *toolCallAccumulator) tryParseArguments() error {
 		return nil
 	}
 
-	if !json.Valid([]byte(raw)) {
+	// Use jsontext.Value for validation in jsonv2
+	val := jsontext.Value(raw)
+	if !val.IsValid() {
 		return nil
 	}
 

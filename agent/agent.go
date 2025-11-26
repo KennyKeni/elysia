@@ -36,7 +36,7 @@ func WithSystemPromptFunc[TDeps, TOutput any](fn func(TDeps) string) Option[TDep
 		a.systemPromptFunc = fn
 	}
 }
-func WithTools[TDeps, TOutput any](tools ...types.Tool) Option[TDeps, TOutput] {
+func WithTools[TDeps, TOutput any](tools ...*Tool[TDeps]) Option[TDeps, TOutput] {
 	return func(a *Agent[TDeps, TOutput]) {
 		a.tools = tools
 	}
