@@ -1,8 +1,8 @@
 package types
 
 import (
-	json "encoding/json/v2"
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"sort"
 	"strings"

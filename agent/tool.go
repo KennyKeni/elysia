@@ -56,12 +56,12 @@ func NewTool[TDep, TIn, TOut any](
 
 	validateAndExecute := func(ctx context.Context, rc *RunContext[TDep], args map[string]any) (*types.ToolResult, error) {
 		// Validate input against the schema
-		if errResult := types.Validate(resolvedInputSchema, args); errResult != nil {
+		if errResult := types.ValidateToolInput(resolvedInputSchema, args); errResult != nil {
 			return errResult, nil
 		}
 
 		// Unmarshal args into typed input
-		typedInput, errResult := types.UnmarshalArgs[TIn](args)
+		typedInput, errResult := types.UnmarshalToolArgs[TIn](args)
 		if errResult != nil {
 			return errResult, nil
 		}
@@ -78,7 +78,7 @@ func NewTool[TDep, TIn, TOut any](
 		}
 
 		// Validate output against the schema
-		if errResult := types.Validate(resolvedOutputSchema, output); errResult != nil {
+		if errResult := types.ValidateToolInput(resolvedOutputSchema, output); errResult != nil {
 			return errResult, nil
 		}
 

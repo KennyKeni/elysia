@@ -1,6 +1,6 @@
 package types
 
-import json "encoding/json/v2"
+import "encoding/json/v2"
 
 // ChatParams represents parameters for a chat completion request.
 // Supports OpenAI, Anthropic, and Google GenAI providers.

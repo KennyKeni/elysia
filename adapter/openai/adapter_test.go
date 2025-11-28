@@ -423,9 +423,9 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	}
 
 	params := &types.ChatParams{
-		Model:           "gpt-4o-mini",
-		Messages:        messages,
-		Tools: []types.ToolDefinition{weatherTool},
+		Model:    "gpt-4o-mini",
+		Messages: messages,
+		Tools:    []types.ToolDefinition{weatherTool},
 	}
 
 	ctx := context.Background()
@@ -480,9 +480,9 @@ func TestChatWithToolsRoundTrip(t *testing.T) {
 	messages = append(messages, toolResultMessage)
 
 	params = &types.ChatParams{
-		Model:           "gpt-4o-mini",
-		Messages:        messages,
-		Tools: []types.ToolDefinition{weatherTool},
+		Model:    "gpt-4o-mini",
+		Messages: messages,
+		Tools:    []types.ToolDefinition{weatherTool},
 	}
 
 	t.Log("Step 3: Sending tool result back to LLM for final answer")
@@ -688,9 +688,9 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	}
 
 	params := &types.ChatParams{
-		Model:           "gpt-4o-mini",
-		Messages:        messages,
-		Tools: []types.ToolDefinition{weatherTool},
+		Model:    "gpt-4o-mini",
+		Messages: messages,
+		Tools:    []types.ToolDefinition{weatherTool},
 	}
 
 	ctx := context.Background()
@@ -764,9 +764,9 @@ func TestChatStreamWithToolsRoundTrip(t *testing.T) {
 	messages = append(messages, toolResultMessage)
 
 	params = &types.ChatParams{
-		Model:           "gpt-4o-mini",
-		Messages:        messages,
-		Tools: []types.ToolDefinition{weatherTool},
+		Model:    "gpt-4o-mini",
+		Messages: messages,
+		Tools:    []types.ToolDefinition{weatherTool},
 	}
 
 	t.Log("Step 3: Streaming final response with tool result")

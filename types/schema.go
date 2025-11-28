@@ -7,6 +7,11 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
+func isValidJSON(s string) bool {
+	var js any
+	return json.Unmarshal([]byte(s), &js) == nil
+}
+
 // ResolveSchemaFor generates and resolves a JSON schema from a Go type
 func ResolveSchemaFor[T any]() (*jsonschema.Resolved, error) {
 	schema, err := jsonschema.For[T](nil)
@@ -42,41 +47,34 @@ func SchemaMapFor[T any]() (map[string]any, error) {
 	return schemaMap, nil
 }
 
-// Validate validates any value against a resolved schema, returning a ToolResult error if invalid
-func Validate(resolved *jsonschema.Resolved, value any) *ToolResult {
-	if err := resolved.Validate(value); err != nil {
-		return &ToolResult{
-			ContentPart: []ContentPart{
-				NewContentPartText(fmt.Sprintf("Validation error: %v", err)),
-			},
-			IsError: true,
-		}
+// ValidateJSONString parses a JSON string and validates it against a schema map
+func ValidateJSONString(content string, schema map[string]any) error {
+	// Parse the content as JSON
+	var parsed any
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
-	return nil
-}
 
-// UnmarshalArgs converts map[string]any args to a typed value, returning a ToolResult error if it fails
-func UnmarshalArgs[T any](args map[string]any) (T, *ToolResult) {
-	var result T
-
-	argsBytes, err := json.Marshal(args)
+	// Convert schema map to jsonschema and resolve
+	schemaBytes, err := json.Marshal(schema)
 	if err != nil {
-		return result, &ToolResult{
-			ContentPart: []ContentPart{
-				NewContentPartText(fmt.Sprintf("Failed to marshal input: %v", err)),
-			},
-			IsError: true,
-		}
+		return fmt.Errorf("failed to marshal schema: %w", err)
 	}
 
-	if err := json.Unmarshal(argsBytes, &result); err != nil {
-		return result, &ToolResult{
-			ContentPart: []ContentPart{
-				NewContentPartText(fmt.Sprintf("Failed to parse input: %v", err)),
-			},
-			IsError: true,
-		}
+	var schemaObj jsonschema.Schema
+	if err := json.Unmarshal(schemaBytes, &schemaObj); err != nil {
+		return fmt.Errorf("failed to parse schema: %w", err)
 	}
 
-	return result, nil
+	resolved, err := schemaObj.Resolve(nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve schema: %w", err)
+	}
+
+	// Validate
+	if err := resolved.Validate(parsed); err != nil {
+		return err
+	}
+
+	return nil
 }
