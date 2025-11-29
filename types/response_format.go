@@ -8,13 +8,103 @@ import (
 	"strings"
 )
 
+func ApplyResponseFormat(params *ChatParams) {
+	rf := params.ResponseFormat
+	if rf.Schema == nil {
+		return
+	}
+
+	switch rf.Mode {
+	case ResponseFormatModeTool:
+		outputTool := BuildOutputToolDefinition(rf)
+		params.Tools = append(params.Tools, outputTool)
+	case ResponseFormatModePrompted:
+		params.SystemPrompt += BuildPromptedSuffix(rf)
+	}
+}
+
+func ExtractStructuredContent(rf ResponseFormat, msg *Message) (string, error) {
+	if rf.Schema == nil {
+		return "", nil
+	}
+
+	var content string
+	var err error
+
+	switch rf.Mode {
+	case ResponseFormatModeNative:
+		content = msg.TextContent()
+
+	case ResponseFormatModeTool:
+		var outputCall *ToolCall
+		for i := range msg.ToolCalls {
+			if msg.ToolCalls[i].Function.Name == OutputToolName {
+				outputCall = &msg.ToolCalls[i]
+				break
+			}
+		}
+
+		if outputCall != nil {
+			// Error if _output called alongside other tools
+			if len(msg.ToolCalls) > 1 {
+				var otherTools []string
+				for _, tc := range msg.ToolCalls {
+					if tc.Function.Name != OutputToolName {
+						otherTools = append(otherTools, tc.Function.Name)
+					}
+				}
+				return "", &OutputToolMisuseError{OtherTools: otherTools}
+			}
+
+			// Extract content
+			b, err := json.Marshal(outputCall.Function.Arguments)
+			if err != nil {
+				return "", err
+			}
+			content = string(b)
+
+			// Transform: remove _output, add as text
+			msg.ToolCalls = nil
+			msg.ContentPart = append(msg.ContentPart, &ContentPartText{Text: content})
+		} else if len(msg.ToolCalls) == 0 {
+			// _output not called and no other tools
+			return "", &ToolNotCalledError{ExpectedTool: OutputToolName, Response: msg}
+		}
+		// else: other tools called, content stays empty, agent loop continues
+
+	case ResponseFormatModePrompted:
+		content, err = ExtractJSON(msg.TextContent())
+		if err != nil {
+			return "", err
+		}
+
+	default:
+		return "", ErrUnsupportedResponseMode
+	}
+
+	// If model made tool calls, it's not done yet - skip validation
+	if len(msg.ToolCalls) > 0 {
+		return "", nil
+	}
+
+	// Validate content against schema (for all modes)
+	if content != "" {
+		if err := ValidateJSONString(content, rf.Schema); err != nil {
+			return "", &SchemaValidationError{RawResponse: content, Err: err}
+		}
+	}
+
+	return content, nil
+}
+
 const OutputToolName = "_output"
 
 // BuildOutputToolDefinition creates the hidden _output tool for Tool mode
 func BuildOutputToolDefinition(rf ResponseFormat) ToolDefinition {
 	description := rf.Description
 	if description == "" {
-		description = "Structured output tool"
+		description = "Structured output tool. " +
+			"Call this tool ONLY when you have the final answer. NEVER call other tools alongside this one."
 	}
 	if rf.Name != "" {
 		description = rf.Name + ": " + description

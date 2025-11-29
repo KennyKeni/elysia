@@ -33,4 +33,5 @@ go.work.sum
 [A-Z]:\\*
 
 # Local planning files
+CLAUDE.md
 TODO.md

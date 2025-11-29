@@ -158,6 +158,10 @@ type Choice struct {
 	Index        int
 	Message      *Message
 	FinishReason string
+
+	// StructuredContent holds extracted JSON when ResponseFormat is used.
+	// Set by the Client wrapper after extracting from tool call or text.
+	StructuredContent string
 }
 
 // Usage represents token usage statistics for the request.

@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
-
-	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // ToolDefinition is metadata describing a tool for the LLM
@@ -51,41 +49,31 @@ func NewTool[TIn, TOut any](
 
 	validateAndExecute := func(ctx context.Context, args map[string]any) (*ToolResult, error) {
 		// Validate input against the schema
-		if errResult := ValidateToolInput(resolvedInputSchema, args); errResult != nil {
-			return errResult, nil
+		if err := Validate(resolvedInputSchema, args); err != nil {
+			return ToolResultFromError(fmt.Errorf("input validation error: %w", err)), nil
 		}
 
 		// Unmarshal args into typed input
-		typedInput, errResult := UnmarshalToolArgs[TIn](args)
-		if errResult != nil {
-			return errResult, nil
+		typedInput, err := UnmarshalToolArgs[TIn](args)
+		if err != nil {
+			return ToolResultFromError(err), nil
 		}
 
 		// Run handler
 		output, err := handler(ctx, typedInput)
 		if err != nil {
-			return &ToolResult{
-				ContentPart: []ContentPart{
-					NewContentPartText(fmt.Sprintf("Execution error: %v", err)),
-				},
-				IsError: true,
-			}, nil
+			return ToolResultFromError(fmt.Errorf("execution error: %w", err)), nil
 		}
 
 		// Validate output against the schema
-		if errResult := ValidateToolInput(resolvedOutputSchema, output); errResult != nil {
-			return errResult, nil
+		if err := Validate(resolvedOutputSchema, output); err != nil {
+			return ToolResultFromError(fmt.Errorf("output validation error: %w", err)), nil
 		}
 
 		// Marshal output to ToolResult
 		outputJSON, err := json.Marshal(output)
 		if err != nil {
-			return &ToolResult{
-				ContentPart: []ContentPart{
-					NewContentPartText(fmt.Sprintf("Failed to marshal output: %v", err)),
-				},
-				IsError: true,
-			}, nil
+			return ToolResultFromError(fmt.Errorf("failed to marshal output: %w", err)), nil
 		}
 
 		return &ToolResult{
@@ -153,40 +141,25 @@ func NewToolResultMessage(toolCallID string, result *ToolResult) Message {
 	}
 }
 
-// ValidateToolInput validates tool input against a resolved schema, returning ToolResult on error
-func ValidateToolInput(resolved *jsonschema.Resolved, value any) *ToolResult {
-	if err := resolved.Validate(value); err != nil {
-		return &ToolResult{
-			ContentPart: []ContentPart{
-				NewContentPartText(fmt.Sprintf("Validation error: %v", err)),
-			},
-			IsError: true,
-		}
+// ToolResultFromError converts any error to a ToolResult for LLM consumption
+func ToolResultFromError(err error) *ToolResult {
+	return &ToolResult{
+		ContentPart: []ContentPart{NewContentPartText(err.Error())},
+		IsError:     true,
 	}
-	return nil
 }
 
-// UnmarshalToolArgs converts map[string]any args to a typed value, returning ToolResult on error
-func UnmarshalToolArgs[T any](args map[string]any) (T, *ToolResult) {
+// UnmarshalToolArgs converts map[string]any args to a typed value
+func UnmarshalToolArgs[T any](args map[string]any) (T, error) {
 	var result T
 
 	argsBytes, err := json.Marshal(args)
 	if err != nil {
-		return result, &ToolResult{
-			ContentPart: []ContentPart{
-				NewContentPartText(fmt.Sprintf("Failed to marshal input: %v", err)),
-			},
-			IsError: true,
-		}
+		return result, fmt.Errorf("failed to marshal args: %w", err)
 	}
 
 	if err := json.Unmarshal(argsBytes, &result); err != nil {
-		return result, &ToolResult{
-			ContentPart: []ContentPart{
-				NewContentPartText(fmt.Sprintf("Failed to parse input: %v", err)),
-			},
-			IsError: true,
-		}
+		return result, fmt.Errorf("failed to unmarshal args: %w", err)
 	}
 
 	return result, nil

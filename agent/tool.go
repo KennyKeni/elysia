@@ -56,41 +56,31 @@ func NewTool[TDep, TIn, TOut any](
 
 	validateAndExecute := func(ctx context.Context, rc *RunContext[TDep], args map[string]any) (*types.ToolResult, error) {
 		// Validate input against the schema
-		if errResult := types.ValidateToolInput(resolvedInputSchema, args); errResult != nil {
-			return errResult, nil
+		if err := types.Validate(resolvedInputSchema, args); err != nil {
+			return types.ToolResultFromError(fmt.Errorf("input validation error: %w", err)), nil
 		}
 
 		// Unmarshal args into typed input
-		typedInput, errResult := types.UnmarshalToolArgs[TIn](args)
-		if errResult != nil {
-			return errResult, nil
+		typedInput, err := types.UnmarshalToolArgs[TIn](args)
+		if err != nil {
+			return types.ToolResultFromError(err), nil
 		}
 
 		// Run handler
 		output, err := handler(ctx, rc, typedInput)
 		if err != nil {
-			return &types.ToolResult{
-				ContentPart: []types.ContentPart{
-					types.NewContentPartText(fmt.Sprintf("Execution error: %v", err)),
-				},
-				IsError: true,
-			}, nil
+			return types.ToolResultFromError(fmt.Errorf("execution error: %w", err)), nil
 		}
 
 		// Validate output against the schema
-		if errResult := types.ValidateToolInput(resolvedOutputSchema, output); errResult != nil {
-			return errResult, nil
+		if err := types.Validate(resolvedOutputSchema, output); err != nil {
+			return types.ToolResultFromError(fmt.Errorf("output validation error: %w", err)), nil
 		}
 
 		// Marshal output to ToolResult
 		outputJSON, err := json.Marshal(output)
 		if err != nil {
-			return &types.ToolResult{
-				ContentPart: []types.ContentPart{
-					types.NewContentPartText(fmt.Sprintf("Failed to marshal output: %v", err)),
-				},
-				IsError: true,
-			}, nil
+			return types.ToolResultFromError(fmt.Errorf("failed to marshal output: %w", err)), nil
 		}
 
 		return &types.ToolResult{

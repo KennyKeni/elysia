@@ -47,6 +47,11 @@ func SchemaMapFor[T any]() (map[string]any, error) {
 	return schemaMap, nil
 }
 
+// Validate validates a value against a resolved schema
+func Validate(resolved *jsonschema.Resolved, value any) error {
+	return resolved.Validate(value)
+}
+
 // ValidateJSONString parses a JSON string and validates it against a schema map
 func ValidateJSONString(content string, schema map[string]any) error {
 	// Parse the content as JSON
