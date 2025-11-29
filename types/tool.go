@@ -48,8 +48,8 @@ func NewTool[TIn, TOut any](
 	}
 
 	validateAndExecute := func(ctx context.Context, args map[string]any) (*ToolResult, error) {
-		// Validate input against the schema
-		if err := Validate(resolvedInputSchema, args); err != nil {
+		// Validate input against the schema (args is already map[string]any)
+		if err := resolvedInputSchema.Validate(args); err != nil {
 			return ToolResultFromError(fmt.Errorf("input validation error: %w", err)), nil
 		}
 
@@ -65,8 +65,8 @@ func NewTool[TIn, TOut any](
 			return ToolResultFromError(fmt.Errorf("execution error: %w", err)), nil
 		}
 
-		// Validate output against the schema
-		if err := Validate(resolvedOutputSchema, output); err != nil {
+		// Validate output against the schema (output is a struct, need ValidateStruct)
+		if err := ValidateStruct(resolvedOutputSchema, output); err != nil {
 			return ToolResultFromError(fmt.Errorf("output validation error: %w", err)), nil
 		}
 

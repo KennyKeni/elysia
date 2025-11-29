@@ -47,9 +47,21 @@ func SchemaMapFor[T any]() (map[string]any, error) {
 	return schemaMap, nil
 }
 
-// Validate validates a value against a resolved schema
-func Validate(resolved *jsonschema.Resolved, value any) error {
-	return resolved.Validate(value)
+// ValidateStruct validates a Go struct against a resolved schema.
+// It marshals the struct to JSON and unmarshals to map[string]any before validating,
+// since jsonschema-go cannot validate Go structs directly.
+func ValidateStruct(resolved *jsonschema.Resolved, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	var jsonValue any
+	if err := json.Unmarshal(data, &jsonValue); err != nil {
+		return fmt.Errorf("failed to unmarshal value: %w", err)
+	}
+
+	return resolved.Validate(jsonValue)
 }
 
 // ValidateJSONString parses a JSON string and validates it against a schema map
