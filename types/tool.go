@@ -2,19 +2,98 @@ package types
 
 import (
 	"context"
-	"encoding/json"
-
-	"github.com/google/jsonschema-go/jsonschema"
+	"encoding/json/v2"
+	"fmt"
 )
 
-type ToolHandler func(ctx context.Context, args map[string]any) (*ToolResult, error)
+// ToolDefinition is metadata describing a tool for the LLM
+// The client sends these to the LLM, but does not execute tools
+// Execution is handled by the caller (agent layer or manual)
+type ToolDefinition struct {
+	Name         string
+	Description  string
+	InputSchema  map[string]any
+	OutputSchema map[string]any
+}
 
-type Tool interface {
-	Name() string
-	Description() string
-	InputSchema() any
-	OutputSchema() any
-	Execute(ctx context.Context, args map[string]any) (*ToolResult, error)
+type Execute func(ctx context.Context, args map[string]any) (*ToolResult, error)
+
+type Tool struct {
+	ToolDefinition
+	Execute Execute
+}
+
+func NewTool[TIn, TOut any](
+	name, description string,
+	handler func(context.Context, TIn) (TOut, error),
+) (*Tool, error) {
+	resolvedInputSchema, err := ResolveSchemaFor[TIn]()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve input schema: %w", err)
+	}
+
+	resolvedOutputSchema, err := ResolveSchemaFor[TOut]()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve output schema: %w", err)
+	}
+
+	inputSchemaMap, err := SchemaMapFor[TIn]()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate input schema map: %w", err)
+	}
+
+	outputSchemaMap, err := SchemaMapFor[TOut]()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate output schema map: %w", err)
+	}
+
+	validateAndExecute := func(ctx context.Context, args map[string]any) (*ToolResult, error) {
+		// Validate input against the schema (args is already map[string]any)
+		if err := resolvedInputSchema.Validate(args); err != nil {
+			return ToolResultFromError(fmt.Errorf("input validation error: %w", err)), nil
+		}
+
+		// Unmarshal args into typed input
+		typedInput, err := UnmarshalToolArgs[TIn](args)
+		if err != nil {
+			return ToolResultFromError(err), nil
+		}
+
+		// Run handler
+		output, err := handler(ctx, typedInput)
+		if err != nil {
+			return ToolResultFromError(fmt.Errorf("execution error: %w", err)), nil
+		}
+
+		// Validate output against the schema (output is a struct, need ValidateStruct)
+		if err := ValidateStruct(resolvedOutputSchema, output); err != nil {
+			return ToolResultFromError(fmt.Errorf("output validation error: %w", err)), nil
+		}
+
+		// Marshal output to ToolResult
+		outputJSON, err := json.Marshal(output)
+		if err != nil {
+			return ToolResultFromError(fmt.Errorf("failed to marshal output: %w", err)), nil
+		}
+
+		return &ToolResult{
+			ContentPart: []ContentPart{
+				NewContentPartText(string(outputJSON)),
+			},
+			StructuredContent: output,
+			IsError:           false,
+		}, nil
+	}
+
+	return &Tool{
+		ToolDefinition: ToolDefinition{
+			Name:         name,
+			Description:  description,
+			InputSchema:  inputSchemaMap,
+			OutputSchema: outputSchemaMap,
+		},
+		Execute: validateAndExecute,
+	}, nil
 }
 
 type ToolResult struct {
@@ -23,27 +102,28 @@ type ToolResult struct {
 	IsError           bool
 }
 
-type ToolOption func(*ToolResult)
+type ToolResultOption func(*ToolResult)
 
-func WithToolText(text string) ToolOption {
+// WithToolText Appends ContentPartText to tool
+func WithToolText(text string) ToolResultOption {
 	return func(t *ToolResult) {
 		t.ContentPart = append(t.ContentPart, &ContentPartText{Text: text})
 	}
 }
 
-func WithToolImage(data string) ToolOption {
+func WithToolImage(data string) ToolResultOption {
 	return func(t *ToolResult) {
 		t.ContentPart = append(t.ContentPart, &ContentPartImage{Data: data})
 	}
 }
 
-func WithStructuredContent(content any) ToolOption {
+func WithStructuredContent(content any) ToolResultOption {
 	return func(t *ToolResult) {
 		t.StructuredContent = content
 	}
 }
 
-func NewToolResult(opts ...ToolOption) *ToolResult {
+func NewToolResult(opts ...ToolResultOption) *ToolResult {
 	t := &ToolResult{ContentPart: make([]ContentPart, 0)}
 	for _, opt := range opts {
 		opt(t)
@@ -61,115 +141,26 @@ func NewToolResultMessage(toolCallID string, result *ToolResult) Message {
 	}
 }
 
-type NativeTool struct {
-	name         string
-	description  string
-	inputSchema  any
-	outputSchema any
-	handler      ToolHandler
+// ToolResultFromError converts any error to a ToolResult for LLM consumption
+func ToolResultFromError(err error) *ToolResult {
+	return &ToolResult{
+		ContentPart: []ContentPart{NewContentPartText(err.Error())},
+		IsError:     true,
+	}
 }
 
-func (n *NativeTool) Name() string {
-	return n.name
-}
+// UnmarshalToolArgs converts map[string]any args to a typed value
+func UnmarshalToolArgs[T any](args map[string]any) (T, error) {
+	var result T
 
-func (n *NativeTool) Description() string {
-	return n.description
-}
-
-func (n *NativeTool) InputSchema() any {
-	return n.inputSchema
-}
-
-func (n *NativeTool) OutputSchema() any {
-	return n.outputSchema
-}
-
-func (n *NativeTool) Execute(ctx context.Context, args map[string]any) (*ToolResult, error) {
-	return n.handler(ctx, args)
-}
-
-// NewNativeTool creates a new native tool with automatic schema generation from Go types
-func NewNativeTool[TIn, TOut any](
-	name, description string,
-	handler func(ctx context.Context, args TIn) (TOut, error),
-) (*NativeTool, error) {
-	// Generate input schema using jsonschema.For
-	inputSchema, err := jsonschema.For[TIn](nil)
+	argsBytes, err := json.Marshal(args)
 	if err != nil {
-		return nil, err
+		return result, fmt.Errorf("failed to marshal args: %w", err)
 	}
 
-	// Generate output schema using jsonschema.For
-	outputSchema, err := jsonschema.For[TOut](nil)
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(argsBytes, &result); err != nil {
+		return result, fmt.Errorf("failed to unmarshal args: %w", err)
 	}
 
-	// Resolve schemas for validation
-	resolvedInput, err := inputSchema.Resolve(nil)
-	if err != nil {
-		return nil, err
-	}
-	resolvedOutput, err := outputSchema.Resolve(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Wrap the typed handler with validation
-	wrappedHandler := func(ctx context.Context, args map[string]any) (*ToolResult, error) {
-		// Validate input against schema
-		if err := resolvedInput.Validate(args); err != nil {
-			return nil, err
-		}
-
-		// Convert map to typed input
-		argsJSON, err := json.Marshal(args)
-		if err != nil {
-			return nil, err
-		}
-		var typedArgs TIn
-		if err := json.Unmarshal(argsJSON, &typedArgs); err != nil {
-			return nil, err
-		}
-
-		// Execute handler
-		result, err := handler(ctx, typedArgs)
-		if err != nil {
-			return &ToolResult{
-				ContentPart:       []ContentPart{&ContentPartText{Text: err.Error()}},
-				StructuredContent: nil,
-				IsError:           true,
-			}, nil
-		}
-
-		resultJSON, err := json.Marshal(result)
-		if err != nil {
-			return nil, err
-		}
-
-		// Validate output
-		var resultValue any
-		if err := json.Unmarshal(resultJSON, &resultValue); err != nil {
-			return nil, err
-		}
-		if err := resolvedOutput.Validate(resultValue); err != nil {
-			return nil, err
-		}
-
-		return &ToolResult{
-			ContentPart:       []ContentPart{&ContentPartText{Text: string(resultJSON)}},
-			StructuredContent: result,
-			IsError:           false,
-		}, nil
-
-	}
-
-	return &NativeTool{
-		name:         name,
-		description:  description,
-		inputSchema:  inputSchema,
-		outputSchema: outputSchema,
-		handler:      wrappedHandler,
-	}, nil
+	return result, nil
 }

@@ -1,7 +1,7 @@
 package openai
 
 import (
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 
 	"github.com/KennyKeni/elysia/types"

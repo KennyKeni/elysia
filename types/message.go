@@ -1,5 +1,7 @@
 package types
 
+import "strings"
+
 type ContentPart interface {
 	IsContentPart()
 }
@@ -25,6 +27,18 @@ type Message struct {
 	ContentPart []ContentPart `json:"content_part"`
 	ToolCalls   []ToolCall    `json:"tool_calls,omitempty"`
 	ToolCallID  *string       `json:"tool_call_id,omitempty"` // For RoleTool messages - references which call this respond to
+}
+
+func (m *Message) TextContent() string {
+	var parts []string
+
+	for _, part := range m.ContentPart {
+		if t, ok := part.(*ContentPartText); ok {
+			parts = append(parts, t.Text)
+		}
+	}
+
+	return strings.Join(parts, "")
 }
 
 type ContentPartText struct {

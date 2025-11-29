@@ -6,6 +6,7 @@ import (
 
 	"github.com/KennyKeni/elysia/types"
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletionNewParams, error) {
@@ -31,9 +32,6 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 	}
 
 	// topK is ignored
-	//if chatParams.TopK != nil {
-	//	slog.Warn("OpenAI does not support top K parameter")
-	//}
 
 	messages, err := ToChatCompletionMessage(chatParams.SystemPrompt, chatParams.Messages)
 	if err != nil {
@@ -43,9 +41,9 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 
 	// Convert tools if provided
 	if len(chatParams.Tools) > 0 {
-		tools, err := ToTools(chatParams.Tools)
+		tools, err := ToToolDefinitions(chatParams.Tools)
 		if err != nil {
-			return openai.ChatCompletionNewParams{}, fmt.Errorf("ToTools failed: %w", err)
+			return openai.ChatCompletionNewParams{}, fmt.Errorf("ToToolDefinitions failed: %w", err)
 		}
 		request.Tools = tools
 
@@ -58,6 +56,25 @@ func ToChatCompletionParams(chatParams *types.ChatParams) (openai.ChatCompletion
 	if chatParams.StreamOptions != nil && chatParams.StreamOptions.IncludeUsage {
 		request.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 			IncludeUsage: openai.Bool(true),
+		}
+	}
+
+	// Handle Native mode ResponseFormat
+	rf := chatParams.ResponseFormat
+	if rf.Mode == types.ResponseFormatModeNative && rf.Schema != nil {
+		name := rf.Name
+		if name == "" {
+			name = "response"
+		}
+		request.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:        name,
+					Description: openai.String(rf.Description),
+					Schema:      rf.Schema,
+					Strict:      openai.Bool(true),
+				},
+			},
 		}
 	}
 

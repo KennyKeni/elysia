@@ -15,8 +15,13 @@ type Client struct {
 	client openai.Client
 }
 
-// NewClient creates a new OpenAI adapter client with options
-func NewClient(opts ...client.Option) *Client {
+// NewClient creates a new OpenAI client wrapped with ResponseFormat handling
+func NewClient(opts ...client.Option) types.Client {
+	return types.NewClient(newRawClient(opts...))
+}
+
+// newRawClient creates the raw OpenAI client (internal)
+func newRawClient(opts ...client.Option) *Client {
 	cfg := client.DefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -29,9 +34,9 @@ func NewClient(opts ...client.Option) *Client {
 	}
 }
 
-// NewClientFromOpenAI creates a new OpenAI adapter with an existing OpenAI client
-func NewClientFromOpenAI(client openai.Client) *Client {
-	return &Client{client: client}
+// NewClientFromOpenAI creates a new OpenAI client from an existing OpenAI SDK client
+func NewClientFromOpenAI(c openai.Client) types.Client {
+	return types.NewClient(&Client{client: c})
 }
 
 func translateConfig(cfg client.Config) []option.RequestOption {
@@ -84,8 +89,8 @@ func translateConfig(cfg client.Config) []option.RequestOption {
 
 // Potentially add per-request options
 
-// Chat performs a non-streaming chat completion request
-func (c *Client) Chat(ctx context.Context, params *types.ChatParams) (*types.ChatResponse, error) {
+// RawChat performs a non-streaming chat completion request
+func (c *Client) RawChat(ctx context.Context, params *types.ChatParams) (*types.ChatResponse, error) {
 	// Convert unified params to OpenAI params
 	openaiParams, err := ToChatCompletionParams(params)
 	if err != nil {
@@ -106,8 +111,8 @@ func (c *Client) Chat(ctx context.Context, params *types.ChatParams) (*types.Cha
 	return FromChatCompletion(completion), nil
 }
 
-// ChatStream performs a streaming chat completion request and returns an iterator over chunks.
-func (c *Client) ChatStream(ctx context.Context, params *types.ChatParams) (*types.Stream, error) {
+// RawChatStream performs a streaming chat completion request and returns an iterator over chunks.
+func (c *Client) RawChatStream(ctx context.Context, params *types.ChatParams) (*types.Stream, error) {
 	openaiParams, err := ToChatCompletionParams(params)
 	if err != nil {
 		return nil, err
@@ -117,8 +122,8 @@ func (c *Client) ChatStream(ctx context.Context, params *types.ChatParams) (*typ
 	return newChatStream(stream), nil
 }
 
-// Embed performs an embedding request
-func (c *Client) Embed(ctx context.Context, params *types.EmbeddingParams) (*types.EmbeddingResponse, error) {
+// RawEmbed performs an embedding request
+func (c *Client) RawEmbed(ctx context.Context, params *types.EmbeddingParams) (*types.EmbeddingResponse, error) {
 	// Convert unified params to OpenAI params
 	openaiParams, err := ToEmbeddingParams(params)
 	if err != nil {

@@ -1,6 +1,6 @@
 package types
 
-import "encoding/json"
+import "encoding/json/v2"
 
 // ChatParams represents parameters for a chat completion request.
 // Supports OpenAI, Anthropic, and Google GenAI providers.
@@ -21,8 +21,11 @@ type ChatParams struct {
 	Stop []string `json:"stop,omitempty"`
 
 	// Tool parameters
-	Tools      []Tool      `json:"tools,omitempty"`
-	ToolChoice *ToolChoice `json:"tool_choice,omitempty"`
+	Tools      []ToolDefinition `json:"tools,omitempty"`
+	ToolChoice *ToolChoice      `json:"tool_choice,omitempty"`
+
+	// Response
+	ResponseFormat ResponseFormat
 
 	// Provider-specific extras
 	Extra map[string]any `json:"-"`
@@ -66,9 +69,15 @@ func WithTopK(topK int) ChatParamOption {
 	}
 }
 
-func WithTools(tools []Tool) ChatParamOption {
+func WithResponseFormat(format ResponseFormat) ChatParamOption {
 	return func(p *ChatParams) {
-		p.Tools = append(p.Tools, tools...)
+		p.ResponseFormat = format
+	}
+}
+
+func WithToolDefinitions(toolDefinitions []ToolDefinition) ChatParamOption {
+	return func(p *ChatParams) {
+		p.Tools = append(p.Tools, toolDefinitions...)
 	}
 }
 
@@ -109,6 +118,29 @@ func WithStreamIncludeUsage() ChatParamOption {
 	return WithStreamOptions(StreamOptions{IncludeUsage: true})
 }
 
+type ResponseFormatMode string
+
+const (
+	// ResponseFormatModeNative uses provider's native structured output (OpenAI response_format, etc.)
+	// Falls back to Tool mode if provider doesn't support it.
+	ResponseFormatModeNative ResponseFormatMode = "native"
+
+	// ResponseFormatModeTool creates a hidden tool for the model to call with structured output.
+	// Works with all providers that support tool calling.
+	ResponseFormatModeTool ResponseFormatMode = "tool"
+
+	// ResponseFormatModePrompted adds instructions to return JSON matching the schema.
+	// Broadest compatibility but least reliable.
+	ResponseFormatModePrompted ResponseFormatMode = "prompted"
+)
+
+type ResponseFormat struct {
+	Mode        ResponseFormatMode
+	Name        string
+	Description string
+	Schema      map[string]any
+}
+
 // ChatResponse represents the response from a chat completion request.
 type ChatResponse struct {
 	ID      string
@@ -126,6 +158,10 @@ type Choice struct {
 	Index        int
 	Message      *Message
 	FinishReason string
+
+	// StructuredContent holds extracted JSON when ResponseFormat is used.
+	// Set by the Client wrapper after extracting from tool call or text.
+	StructuredContent string
 }
 
 // Usage represents token usage statistics for the request.
@@ -151,6 +187,8 @@ type ToolChoice struct {
 	Name string         `json:"-"` // Only used when Mode == ToolChoiceModeTool
 }
 
+// TODO Could do away with some of these
+
 // ToolChoiceAuto creates a ToolChoice that lets the model decide.
 func ToolChoiceAuto() *ToolChoice {
 	return &ToolChoice{Mode: ToolChoiceModeAuto}
@@ -167,8 +205,8 @@ func ToolChoiceNone() *ToolChoice {
 }
 
 // ToolChoiceTool creates a ToolChoice that forces a specific tool.
-func ToolChoiceTool(tool Tool) *ToolChoice {
-	return &ToolChoice{Mode: ToolChoiceModeTool, Name: tool.Name()}
+func ToolChoiceTool(tool ToolDefinition) *ToolChoice {
+	return &ToolChoice{Mode: ToolChoiceModeTool, Name: tool.Name}
 }
 
 // ToolChoiceToolWithName creates a ToolChoice with a tool name.
@@ -193,6 +231,7 @@ func (tc *ToolChoice) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		tc.Mode = ToolChoiceMode(s)
+		tc.Name = ""
 		return nil
 	}
 

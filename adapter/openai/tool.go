@@ -1,21 +1,20 @@
 package openai
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/KennyKeni/elysia/types"
 	"github.com/openai/openai-go/v3"
 )
 
-// ToTools converts unified tool definitions to OpenAI tool parameters
-func ToTools(tools []types.Tool) ([]openai.ChatCompletionToolUnionParam, error) {
-	result := make([]openai.ChatCompletionToolUnionParam, 0, len(tools))
+// ToToolDefinitions converts unified tool definitions to OpenAI tool parameters
+func ToToolDefinitions(toolDefinitions []types.ToolDefinition) ([]openai.ChatCompletionToolUnionParam, error) {
+	result := make([]openai.ChatCompletionToolUnionParam, 0, len(toolDefinitions))
 
-	for _, tool := range tools {
-		toolParam, err := toToolDefinitionParam(tool)
+	for _, definition := range toolDefinitions {
+		toolParam, err := toToolDefinitionParam(definition)
 		if err != nil {
-			return nil, fmt.Errorf("error converting tool %s: %w", tool.Name(), err)
+			return nil, fmt.Errorf("error converting tool %s: %w", definition.Name, err)
 		}
 		result = append(result, toolParam)
 	}
@@ -24,27 +23,18 @@ func ToTools(tools []types.Tool) ([]openai.ChatCompletionToolUnionParam, error) 
 }
 
 // toToolDefinitionParam converts a single tool definition to OpenAI tool parameter
-func toToolDefinitionParam(tool types.Tool) (openai.ChatCompletionToolUnionParam, error) {
-	// Convert the input schema to map[string]interface{}
-	var parameters map[string]interface{}
-	if tool.InputSchema() != nil {
-		// InputSchema() returns any, which could be a schema struct or already a map
-		// We need to marshal it to JSON first, then unmarshal to map[string]interface{}
-		schemaJSON, err := json.Marshal(tool.InputSchema())
-		if err != nil {
-			return openai.ChatCompletionToolUnionParam{}, fmt.Errorf("failed to marshal input schema: %w", err)
-		}
-		if err := json.Unmarshal(schemaJSON, &parameters); err != nil {
-			return openai.ChatCompletionToolUnionParam{}, fmt.Errorf("failed to unmarshal input schema: %w", err)
-		}
+func toToolDefinitionParam(tool types.ToolDefinition) (openai.ChatCompletionToolUnionParam, error) {
+	// InputSchema is already map[string]any, just use it directly
+	if tool.InputSchema == nil {
+		return openai.ChatCompletionToolUnionParam{}, fmt.Errorf("tool %s has nil input schema", tool.Name)
 	}
 
 	return openai.ChatCompletionToolUnionParam{
 		OfFunction: &openai.ChatCompletionFunctionToolParam{
 			Function: openai.FunctionDefinitionParam{
-				Name:        tool.Name(),
-				Description: openai.String(tool.Description()),
-				Parameters:  openai.FunctionParameters(parameters),
+				Name:        tool.Name,
+				Description: openai.String(tool.Description),
+				Parameters:  openai.FunctionParameters(tool.InputSchema),
 			},
 		},
 	}, nil
